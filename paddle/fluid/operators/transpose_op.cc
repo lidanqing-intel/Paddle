@@ -13,9 +13,9 @@ See the License for the specific language governing permissions and
 limitations under the License. */
 
 #include "paddle/fluid/operators/transpose_op.h"
+#include <memory>
 #include <string>
 #include <vector>
-
 #ifdef PADDLE_WITH_MKLDNN
 #include "paddle/fluid/platform/mkldnn_helper.h"
 #endif
@@ -222,12 +222,16 @@ class Transpose2GradMaker : public framework::SingleGradOpDescMaker {
 
   std::unique_ptr<framework::OpDesc> Apply() const override {
     auto *grad_op = new framework::OpDesc();
-    grad_op->SetType("transpose2_grad");
+    grad_op->SetType(GradOpType());
     grad_op->SetInput("XShape", Output("XShape"));
     grad_op->SetInput(framework::GradVarName("Out"), OutputGrad("Out"));
     grad_op->SetOutput(framework::GradVarName("X"), InputGrad("X"));
     grad_op->SetAttrMap(Attrs());
     return std::unique_ptr<framework::OpDesc>(grad_op);
+  }
+
+  virtual std::string GradOpType() const {
+    return this->ForwardOpType() + "_grad";
   }
 };
 

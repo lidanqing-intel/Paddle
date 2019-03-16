@@ -390,10 +390,8 @@ class OpKernelBase {
    * device resource such as CUDA stream, cublas handle, etc. from
    * ExecutionContext. User should construct it before run the Operator.
    */
-
-  virtual void Compute(const ExecutionContext& context) const = 0;
-
   virtual ~OpKernelBase() = default;
+  virtual void Compute(const ExecutionContext& context) const = 0;
 };
 
 template <typename T>
