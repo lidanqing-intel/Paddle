@@ -722,6 +722,21 @@ struct Transpose2 : public PatternBase {
   PATTERN_DECL_NODE(transpose_out);
 };
 
+// Reshape2 op
+// Forward pass for reshape.
+// reshape_input is the input.
+// reshape_output is a result of the operator.
+struct Reshape2 : public PatternBase {
+  Reshape2(PDPattern* pattern, const std::string& name_scope)
+      : PatternBase(pattern, name_scope, "reshape2") {}
+
+  PDNode* operator()();
+
+  PATTERN_DECL_NODE(reshape_op);
+  PATTERN_DECL_NODE(reshape_in);
+  PATTERN_DECL_NODE(reshape_out);
+};
+
 // Conv + ElementwiseAdd + an activation
 // This pattern can futher fuse the conv related ops after the conv+bn fusion.
 struct ConvElementwiseaddAct : public PatternBase {

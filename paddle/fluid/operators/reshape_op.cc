@@ -12,9 +12,14 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License. */
 
+#include <memory>
 #include <string>
 #include <vector>
 #include "paddle/fluid/framework/op_registry.h"
+
+#ifdef PADDLE_WITH_MKLDNN
+#include "paddle/fluid/platform/mkldnn_helper.h"
+#endif
 
 namespace paddle {
 namespace operators {
@@ -129,6 +134,7 @@ class ReshapeOpMaker : public framework::OpProtoAndCheckerMaker {
     AddOutput("Out", "(Tensor). The output tensor of reshape operator.");
     AddAttr<std::vector<int>>(
         "shape", "(std::vector<int>) Target shape of reshape operator.");
+
     AddComment(R"DOC(
 Reshape Operator.
 
@@ -225,6 +231,25 @@ class ReshapeKernel {
         *in, ctx.GetPlace(),
         ctx.template device_context<platform::DeviceContext>(), out);
     out->Resize(out_dims);
+
+//   framework::LibraryType library_{framework::LibraryType::kPlain};
+//    std::string data_format = ctx.Attr<std::string>("data_format");
+//    framework::DataLayout layout_ =
+//    framework::StringToDataLayout(data_format);
+
+#ifdef PADDLE_WITH_MKLDNN
+    mkldnn::memory::format dst_fmt = platform::MKLDNNFormatForSize(
+        paddle::framework::vectorize2int(out_dims).size(),
+        mkldnn::memory::format::nchw);
+    out->set_layout(framework::DataLayout::kMKLDNN);
+    out->set_format(dst_fmt);
+//       if (library_ == framework::LibraryType::kPlain &&
+//        platform::CanMKLDNNBeUsed(ctx)) {
+//      library_ = framework::LibraryType::kMKLDNN;
+//      layout_ = framework::DataLayout::kMKLDNN;
+//    }
+
+#endif
   }
 };
 
@@ -277,6 +302,16 @@ class Reshape2OpMaker : public ReshapeOpMaker {
               "XShape is just used to store the shape and lod of X, which will "
               "be used in FlattenGradOp.")
         .AsIntermediate();
+
+    AddAttr<bool>("use_mkldnn",
+                  "(bool, default false) Only used in mkldnn kernel")
+        .SetDefault(false);
+    AddAttr<bool>(
+        "use_quantizer",
+        "(bool. default false)"
+        "Set to true for operators that should be quantized and use int8 kernel"
+        "Only used on CPU")
+        .SetDefault(false);
   }
 };
 
@@ -368,7 +403,8 @@ REGISTER_OPERATOR(reshape2_grad, ops::Reshape2GradOp,
                   ops::ReshapeGradInplaceInToOut);
 REGISTER_OP_CPU_KERNEL_FUNCTOR(reshape2, float, ops::ReshapeKernel, double,
                                ops::ReshapeKernel, int, ops::ReshapeKernel,
-                               int64_t, ops::ReshapeKernel);
+                               int64_t, ops::ReshapeKernel, int8_t,
+                               ops::ReshapeKernel, uint8_t, ops::ReshapeKernel);
 REGISTER_OP_CPU_KERNEL_FUNCTOR(reshape2_grad, float, ops::ReshapeGradKernel,
                                double, ops::ReshapeGradKernel, int,
                                ops::ReshapeGradKernel, int64_t,

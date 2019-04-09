@@ -69,7 +69,8 @@ bool AnalysisPredictor::MkldnnQuantizer::CalculateScales() {
             is_unsigned = op->HasAttr("fuse_relu") &&
                           boost::get<bool>(op->GetAttr("fuse_relu"));
           } else if (is_output &&
-                     (op->Type() == "pool2d" || op->Type() == "transpose2")) {
+                     (op->Type() == "pool2d" || op->Type() == "transpose2" ||
+                      op->Type() == "reshape2")) {
             // output of pool2d with unsigned input must be unsigned
             auto input_var_name = op->Input("X")[0];
             if (scales_.find(input_var_name) != scales_.end()) {
