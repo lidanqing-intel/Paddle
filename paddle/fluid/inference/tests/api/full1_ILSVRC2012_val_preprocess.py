@@ -35,9 +35,9 @@ SIZE_FLOAT32 = 4
 SIZE_INT64 = 8
 FULL_SIZE_BYTES = 30106000008
 FULL_IMAGES = 50000
-DATA_DIR_NAME = 'ILSVRC2012'
-IMG_DIR_NAME = 'var'
 TARGET_HASH = '8dc592db6dcc8d521e4d5ba9da5ca7d2'
+FOLDER_NAME = "ILSVRC2012/"
+
 img_mean = np.array([0.485, 0.456, 0.406]).reshape((3, 1, 1))
 img_std = np.array([0.229, 0.224, 0.225]).reshape((3, 1, 1))
 
@@ -65,8 +65,7 @@ def crop_image(img, target_size, center):
     return img
 
 
-def process_image(img_path, mode, color_jitter, rotate):
-    img = Image.open(img_path)
+def process_image(img):
     img = resize_short(img, target_size=256)
     img = crop_image(img, target_size=DATA_DIM, center=True)
     if img.mode != 'RGB':
@@ -102,20 +101,6 @@ def download_concat(cache_folder, zip_path):
                     outfile.write(infile.read())
 
 
-def extract(zip_path, extract_folder):
-    data_dir = os.path.join(extract_folder, DATA_DIR_NAME)
-    img_dir = os.path.join(data_dir, IMG_DIR_NAME)
-    print("Extracting...\n")
-
-    if not (os.path.exists(img_dir) and
-            len(os.listdir(img_dir)) == FULL_IMAGES):
-        tar = tarfile.open(zip_path)
-        tar.extractall(path=extract_folder)
-        tar.close()
-    print('Extracted. Full Imagenet Validation dataset is located at {0}\n'.
-          format(data_dir))
-
-
 def print_processbar(done, total):
     done_filled = done * '='
     empty_filled = (total - done) * ' '
@@ -149,57 +134,77 @@ def check_integrity(filename, target_hash):
         return False
 
 
-def convert(file_list, data_dir, output_file):
+def convert(tar_file, output_file):
     print('Converting 50000 images to binary file ...\n')
-    with open(file_list) as flist:
-        lines = [line.strip() for line in flist]
-        num_images = len(lines)
-        with open(output_file, "w+b") as ofs:
-            #save num_images(int64_t) to file
-            ofs.seek(0)
-            num = np.array(int(num_images)).astype('int64')
-            ofs.write(num.tobytes())
-            per_parts = 500
-            full_parts = FULL_IMAGES / per_parts
-            print_processbar(0, full_parts)
-            start = timer()
-            for idx, line in enumerate(lines):
-                img_path, label = line.split()
-                img_path = os.path.join(data_dir, img_path)
-                if not os.path.exists(img_path):
-                    continue
+    f1 = tarfile.open(name=tar_file, mode='r:gz')
+    val_info = f1.getmembers()[-1]
+    val_list = f1.extractfile(val_info).read()
+    lines = val_list.split('\n')
+    num_images = len(lines)
+    f1.close()
 
-                #save image(float32) to file
-                img = process_image(
-                    img_path, 'val', color_jitter=False, rotate=False)
-                np_img = np.array(img)
-                ofs.seek(SIZE_INT64 + SIZE_FLOAT32 * DATA_DIM * DATA_DIM * 3 *
-                         idx)
-                ofs.write(np_img.astype('float32').tobytes())
-                ofs.flush()
+    f1 = tarfile.open(name=tar_file, mode='r:gz')
 
-                #save label(int64_t) to file
-                label_int = (int)(label)
-                np_label = np.array(label_int)
-                ofs.seek(SIZE_INT64 + SIZE_FLOAT32 * DATA_DIM * DATA_DIM * 3 *
-                         num_images + idx * SIZE_INT64)
-                ofs.write(np_label.astype('int64').tobytes())
-                ofs.flush()
-                if (idx + 1) % per_parts == 0:
-                    done = (idx + 1) / per_parts
-                    print_processbar(done, full_parts)
-                    end = timer()
-                    print(idx)
-                    print(timedelta(seconds=end - start))
+    f1.next()
+    f1.next()
+
+    with open(output_file, "w+b") as ofs:
+        #save num_images(int64_t) to file
+        ofs.seek(0)
+        num = np.array(int(num_images)).astype('int64')
+        ofs.write(num.tobytes())
+        per_parts = 500
+        full_parts = FULL_IMAGES / per_parts
+        print_processbar(0, full_parts)
+
+        fp_info = f1.next()
+
+        idx = 0
+
+        start = timer()
+        while fp_info is not None:
+            img_name = fp_info.name
+            fp = f1.extractfile(fp_info)
+
+            img = Image.open(fp)
+            img = process_image(img)
+            np_img = np.array(img)
+            ofs.seek(SIZE_INT64 + SIZE_FLOAT32 * DATA_DIM * DATA_DIM * 3 * idx)
+            ofs.write(np_img.astype('float32').tobytes())
+            ofs.flush()
+
+            remove_len = (len(FOLDER_NAME))
+
+            img_name_prim = img_name[remove_len:]
+
+            matching = [s for s in lines if img_name_prim in s]
+            _, label = matching[0].split()
+
+            #save label(int64_t) to file
+            label_int = (int)(label)
+            np_label = np.array(label_int)
+            ofs.seek(SIZE_INT64 + SIZE_FLOAT32 * DATA_DIM * DATA_DIM * 3 *
+                     num_images + idx * SIZE_INT64)
+            ofs.write(np_label.astype('int64').tobytes())
+            ofs.flush()
+
+            if (idx + 1) % per_parts == 0:
+                done = (idx + 1) / per_parts
+                print_processbar(done, full_parts)
+                end = timer()
+                print(idx)
+                print(timedelta(seconds=end - start))
+
+            fp_info = f1.next()
+            idx = idx + 1
+
+    f1.close()
     print("Conversion finished.")
 
 
 def run_convert():
     print('Start to download and convert 50000 images to binary file...')
     cache_folder = os.path.expanduser('~/.cache/paddle/dataset/int8/download')
-    extract_folder = os.path.join(cache_folder, 'full_data')
-    data_dir = os.path.join(extract_folder, DATA_DIR_NAME)
-    file_list = os.path.join(data_dir, 'val_list.txt')
     zip_path = os.path.join(cache_folder, 'full_imagenet_val.tar.gz')
     output_file = os.path.join(cache_folder, 'int8_full_val.bin')
     retry = 0
@@ -220,8 +225,7 @@ def run_convert():
                 "Can not convert the dataset to binary file with try limit {0}".
                 format(try_limit))
         download_concat(cache_folder, zip_path)
-        extract(zip_path, extract_folder)
-        convert(file_list, data_dir, output_file)
+        convert(zip_path, output_file)
     print("\nSuccess! The binary file can be found at {0}".format(output_file))
 
 
