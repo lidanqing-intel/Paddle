@@ -162,42 +162,58 @@ def convert(tar_file, output_file):
         idx = 0
 
         start = timer()
-        while fp_info is not None:
-            img_name = fp_info.name
-            fp = f1.extractfile(fp_info)
+        for tar_info in f1:
+            start = timer()
+            img_name = tar_info.name
+
+            if idx == 0 or idx == 1:
+                idx = idx + 1
+                f1.members = []
+                f1.names = []
+                continue
+
+            fp = f1.extractfile(tar_info)
+            #tar_info = None
+
+            print(idx)
 
             img = Image.open(fp)
-            img = process_image(img)
-            np_img = np.array(img)
-            ofs.seek(SIZE_INT64 + SIZE_FLOAT32 * DATA_DIM * DATA_DIM * 3 * idx)
-            ofs.write(np_img.astype('float32').tobytes())
-            ofs.flush()
+            #fp = None
+            end = timer()
+            print(timedelta(seconds=end - start))
 
-            remove_len = (len(FOLDER_NAME))
+            #            img = process_image(img)
+            #            np_img = np.array(img)
+            #            ofs.seek(SIZE_INT64 + SIZE_FLOAT32 * DATA_DIM * DATA_DIM * 3 * idx)
+            #            ofs.write(np_img.astype('float32').tobytes())
+            #            ofs.flush()
+            #
+            #            remove_len = (len(FOLDER_NAME))
+            #
+            #            img_name_prim = img_name[remove_len:]
+            #
+            #            matching = [s for s in lines if img_name_prim in s]
+            #            _, label = matching[0].split()
+            #
+            #            #save label(int64_t) to ile
+            #            label_int = (int)(label)
+            #            np_label = np.array(label_int)
+            #            ofs.seek(SIZE_INT64 + SIZE_FLOAT32 * DATA_DIM * DATA_DIM * 3 *
+            #                     num_images + idx * SIZE_INT64)
+            #            ofs.write(np_label.astype('int64').tobytes())
+            #            ofs.flush()
+            #
+            #            if (idx - 1) % per_parts == 0:
+            #                done = (idx - 1) / per_parts
+            #                print_processbar(done, full_parts)
+            #                end = timer()
+            #                print(idx)
+            #            i    print(timedelta(seconds=end - start))
 
-            img_name_prim = img_name[remove_len:]
+            f1.members = []
+            f1.names = []
 
-            matching = [s for s in lines if img_name_prim in s]
-            _, label = matching[0].split()
-
-            #save label(int64_t) to file
-            label_int = (int)(label)
-            np_label = np.array(label_int)
-            ofs.seek(SIZE_INT64 + SIZE_FLOAT32 * DATA_DIM * DATA_DIM * 3 *
-                     num_images + idx * SIZE_INT64)
-            ofs.write(np_label.astype('int64').tobytes())
-            ofs.flush()
-
-            if (idx + 1) % per_parts == 0:
-                done = (idx + 1) / per_parts
-                print_processbar(done, full_parts)
-                end = timer()
-                print(idx)
-                print(timedelta(seconds=end - start))
-
-            fp_info = f1.next()
             idx = idx + 1
-
     f1.close()
     print("Conversion finished.")
 
@@ -205,7 +221,7 @@ def convert(tar_file, output_file):
 def run_convert():
     print('Start to download and convert 50000 images to binary file...')
     cache_folder = os.path.expanduser('~/.cache/paddle/dataset/int8/download')
-    zip_path = os.path.join(cache_folder, 'full_imagenet_val.tar.gz')
+    zip_path = os.path.join(cache_folder, 'full_imagenet_val.tar.gz.partaa')
     output_file = os.path.join(cache_folder, 'int8_full_val.bin')
     retry = 0
     try_limit = 3
@@ -224,7 +240,7 @@ def run_convert():
             raise RuntimeError(
                 "Can not convert the dataset to binary file with try limit {0}".
                 format(try_limit))
-        download_concat(cache_folder, zip_path)
+        #download_concat(cache_folder, zip_path)
         convert(zip_path, output_file)
     print("\nSuccess! The binary file can be found at {0}".format(output_file))
 
