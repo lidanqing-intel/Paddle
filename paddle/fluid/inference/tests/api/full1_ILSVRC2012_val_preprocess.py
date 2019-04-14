@@ -37,7 +37,8 @@ SIZE_FLOAT32 = 4
 SIZE_INT64 = 8
 FULL_SIZE_BYTES = 30106000008
 FULL_IMAGES = 50000
-TARGET_HASH = '8dc592db6dcc8d521e4d5ba9da5ca7d2'
+#TARGET_HASH = '8dc592db6dcc8d521e4d5ba9da5ca7d2'
+TARGET_HASH = '42e5020ef7b996f24dd2948eaf472915'
 FOLDER_NAME = "ILSVRC2012/"
 VALLIST_TAR_NAME = "ILSVRC2012/val_list.txt"
 
@@ -116,15 +117,14 @@ def check_integrity(filename, target_hash):
     print('\nThe binary file exists. Checking file integrity...\n')
     md = hashlib.md5()
     count = 0
-    total_parts = 50
     chunk_size = 8192
-    onepart = FULL_SIZE_BYTES / chunk_size / total_parts
+    onepart = FULL_SIZE_BYTES / chunk_size/100
     with open(filename) as ifs:
         while True:
-            buf = ifs.read(8192)
+            buf = ifs.read(chunk_size)
             if count % onepart == 0:
                 done = count / onepart
-                print_processbar(done, total_parts)
+                print_processbar(done)
             count = count + 1
             if not buf:
                 break
@@ -161,7 +161,6 @@ def convert(tar_file, output_file):
             dataset[tarInfo.name] = tar.extractfile(tarInfo).read()
         
     with open(output_file, "w+b") as ofs:
-        #save num_images(int64_t) to file
         ofs.seek(0)
         num = np.array(int(num_images)).astype('int64')
         ofs.write(num.tobytes())
@@ -169,14 +168,17 @@ def convert(tar_file, output_file):
         per_percentage = FULL_IMAGES/100 
         
         print_processbar(0)
+        idx = 0
         for imagedata in dataset.values():
             img = Image.open(StringIO.StringIO(imagedata))
             img = process_image(img)
             np_img = np.array(img)
             ofs.write(np_img.astype('float32').tobytes())
-            #print(idx)
-            #idx = idx + 1
-        print("All images transformed!\n")
+            if idx % per_percentage == 0:
+                print_processbar(idx/per_percentage)
+            idx = idx + 1
+       
+
         for img_name in dataset.keys(): 
             remove_len = (len(FOLDER_NAME))
             img_name_prim = img_name[remove_len:]
@@ -184,7 +186,7 @@ def convert(tar_file, output_file):
             label_int = (int)(label)
             np_label = np.array(label_int)
             ofs.write(np_label.astype('int64').tobytes())
-
+        print_processbar(100)   
     print("Conversion finished.")
 
 
@@ -196,24 +198,23 @@ def run_convert():
     retry = 0
     try_limit = 3
 
-    download_concat(cache_folder, zip_path)
-    convert(zip_path, output_file)
-#    while not (os.path.exists(output_file) and
-#               os.path.getsize(output_file) == FULL_SIZE_BYTES and
-#               check_integrity(output_file, TARGET_HASH)):
-#        if os.path.exists(output_file):
-#            sys.stderr.write(
-#                "\n\nThe existing binary file is broken. Start to generate new one...\n\n".
-#                format(output_file))
-#            os.remove(output_file)
-#        if retry < try_limit:
-#            retry = retry + 1
-#        else:
-#            raise RuntimeError(
-#                "Can not convert the dataset to binary file with try limit {0}".
-#                format(try_limit))
-#        #download_concat(cache_folder, zip_path)
-#        convert(zip_path, output_file)
+
+    while not (os.path.exists(output_file) and
+               os.path.getsize(output_file) == FULL_SIZE_BYTES and
+               check_integrity(output_file, TARGET_HASH)):
+        if os.path.exists(output_file):
+            sys.stderr.write(
+                "\n\nThe existing binary file is broken. Start to generate new one...\n\n".
+                format(output_file))
+            os.remove(output_file)
+        if retry < try_limit:
+            retry = retry + 1
+        else:
+            raise RuntimeError(
+                "Can not convert the dataset to binary file with try limit {0}".
+                format(try_limit))
+        download_concat(cache_folder, zip_path)
+        convert(zip_path, output_file)
     print("\nSuccess! The binary file can be found at {0}".format(output_file))
 
 
