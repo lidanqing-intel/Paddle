@@ -21,11 +21,13 @@ import functools
 import contextlib
 from PIL import Image, ImageEnhance
 import math
-from paddle.dataset.common import download, md5file
+from paddle.dataset.common import download
 import tarfile
 
 from timeit import default_timer as timer
 from datetime import timedelta
+import StringIO
+
 
 random.seed(0)
 np.random.seed(0)
@@ -37,6 +39,7 @@ FULL_SIZE_BYTES = 30106000008
 FULL_IMAGES = 50000
 TARGET_HASH = '8dc592db6dcc8d521e4d5ba9da5ca7d2'
 FOLDER_NAME = "ILSVRC2012/"
+VALLIST_TAR_NAME = "ILSVRC2012/val_list.txt"
 
 img_mean = np.array([0.485, 0.456, 0.406]).reshape((3, 1, 1))
 img_std = np.array([0.229, 0.224, 0.225]).reshape((3, 1, 1))
@@ -101,12 +104,11 @@ def download_concat(cache_folder, zip_path):
                     outfile.write(infile.read())
 
 
-def print_processbar(done, total):
-    done_filled = done * '='
-    empty_filled = (total - done) * ' '
-    percentage_done = done * 100 / total
+def print_processbar(done_percentage):
+    done_filled = done_percentage * '='
+    empty_filled = (100 - done_percentage) * ' '
     sys.stdout.write("\r[%s%s]%d%%" %
-                     (done_filled, empty_filled, percentage_done))
+                     (done_filled, empty_filled, done_percentage))
     sys.stdout.flush()
 
 
@@ -136,85 +138,53 @@ def check_integrity(filename, target_hash):
 
 def convert(tar_file, output_file):
     print('Converting 50000 images to binary file ...\n')
-    f1 = tarfile.open(name=tar_file, mode='r:gz')
-    val_info = f1.getmembers()[-1]
-    val_list = f1.extractfile(val_info).read()
+    tar = tarfile.open(name=tar_file, mode='r:gz')
+
+    val_info = tar.getmember(VALLIST_TAR_NAME)
+    val_list = tar.extractfile(val_info).read()
+
+     
     lines = val_list.split('\n')
     num_images = len(lines)
-    f1.close()
+    print(num_images)
+    val_dict = {}
+    for line_idx, line in enumerate(lines):
+        if line_idx == 50000:
+            break
+        #print(line.split())
+        name, label = line.split()
+        val_dict[name] = label
 
-    f1 = tarfile.open(name=tar_file, mode='r:gz')
-
-    f1.next()
-    f1.next()
-
+    dataset = {}
+    for tarInfo in tar:
+        if tarInfo.isfile() and tarInfo.name != VALLIST_TAR_NAME:
+            dataset[tarInfo.name] = tar.extractfile(tarInfo).read()
+        
     with open(output_file, "w+b") as ofs:
         #save num_images(int64_t) to file
         ofs.seek(0)
         num = np.array(int(num_images)).astype('int64')
         ofs.write(num.tobytes())
-        per_parts = 500
-        full_parts = FULL_IMAGES / per_parts
-        print_processbar(0, full_parts)
+        
+        per_percentage = FULL_IMAGES/100 
+        
+        print_processbar(0)
+        for imagedata in dataset.values():
+            img = Image.open(StringIO.StringIO(imagedata))
+            img = process_image(img)
+            np_img = np.array(img)
+            ofs.write(np_img.astype('float32').tobytes())
+            #print(idx)
+            #idx = idx + 1
+        print("All images transformed!\n")
+        for img_name in dataset.keys(): 
+            remove_len = (len(FOLDER_NAME))
+            img_name_prim = img_name[remove_len:]
+            label = val_dict[img_name_prim]
+            label_int = (int)(label)
+            np_label = np.array(label_int)
+            ofs.write(np_label.astype('int64').tobytes())
 
-        fp_info = f1.next()
-
-        idx = 0
-
-        start = timer()
-        for tar_info in f1:
-            start = timer()
-            img_name = tar_info.name
-
-            if idx == 0 or idx == 1:
-                idx = idx + 1
-                f1.members = []
-                f1.names = []
-                continue
-
-            fp = f1.extractfile(tar_info)
-            #tar_info = None
-
-            print(idx)
-
-            img = Image.open(fp)
-            #fp = None
-            end = timer()
-            print(timedelta(seconds=end - start))
-
-            #            img = process_image(img)
-            #            np_img = np.array(img)
-            #            ofs.seek(SIZE_INT64 + SIZE_FLOAT32 * DATA_DIM * DATA_DIM * 3 * idx)
-            #            ofs.write(np_img.astype('float32').tobytes())
-            #            ofs.flush()
-            #
-            #            remove_len = (len(FOLDER_NAME))
-            #
-            #            img_name_prim = img_name[remove_len:]
-            #
-            #            matching = [s for s in lines if img_name_prim in s]
-            #            _, label = matching[0].split()
-            #
-            #            #save label(int64_t) to ile
-            #            label_int = (int)(label)
-            #            np_label = np.array(label_int)
-            #            ofs.seek(SIZE_INT64 + SIZE_FLOAT32 * DATA_DIM * DATA_DIM * 3 *
-            #                     num_images + idx * SIZE_INT64)
-            #            ofs.write(np_label.astype('int64').tobytes())
-            #            ofs.flush()
-            #
-            #            if (idx - 1) % per_parts == 0:
-            #                done = (idx - 1) / per_parts
-            #                print_processbar(done, full_parts)
-            #                end = timer()
-            #                print(idx)
-            #            i    print(timedelta(seconds=end - start))
-
-            f1.members = []
-            f1.names = []
-
-            idx = idx + 1
-    f1.close()
     print("Conversion finished.")
 
 
@@ -226,22 +196,24 @@ def run_convert():
     retry = 0
     try_limit = 3
 
-    while not (os.path.exists(output_file) and
-               os.path.getsize(output_file) == FULL_SIZE_BYTES and
-               check_integrity(output_file, TARGET_HASH)):
-        if os.path.exists(output_file):
-            sys.stderr.write(
-                "\n\nThe existing binary file is broken. Start to generate new one...\n\n".
-                format(output_file))
-            os.remove(output_file)
-        if retry < try_limit:
-            retry = retry + 1
-        else:
-            raise RuntimeError(
-                "Can not convert the dataset to binary file with try limit {0}".
-                format(try_limit))
-        #download_concat(cache_folder, zip_path)
-        convert(zip_path, output_file)
+    download_concat(cache_folder, zip_path)
+    convert(zip_path, output_file)
+#    while not (os.path.exists(output_file) and
+#               os.path.getsize(output_file) == FULL_SIZE_BYTES and
+#               check_integrity(output_file, TARGET_HASH)):
+#        if os.path.exists(output_file):
+#            sys.stderr.write(
+#                "\n\nThe existing binary file is broken. Start to generate new one...\n\n".
+#                format(output_file))
+#            os.remove(output_file)
+#        if retry < try_limit:
+#            retry = retry + 1
+#        else:
+#            raise RuntimeError(
+#                "Can not convert the dataset to binary file with try limit {0}".
+#                format(try_limit))
+#        #download_concat(cache_folder, zip_path)
+#        convert(zip_path, output_file)
     print("\nSuccess! The binary file can be found at {0}".format(output_file))
 
 
