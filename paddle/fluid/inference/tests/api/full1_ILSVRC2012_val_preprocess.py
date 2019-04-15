@@ -36,8 +36,7 @@ SIZE_FLOAT32 = 4
 SIZE_INT64 = 8
 FULL_SIZE_BYTES = 30106000008
 FULL_IMAGES = 50000
-#TARGET_HASH = '8dc592db6dcc8d521e4d5ba9da5ca7d2'
-TARGET_HASH = '42e5020ef7b996f24dd2948eaf472915'
+TARGET_HASH = '22d2e0008dca693916d9595a5ea3ded8'
 FOLDER_NAME = "ILSVRC2012/"
 VALLIST_TAR_NAME = "ILSVRC2012/val_list.txt"
 
@@ -143,6 +142,8 @@ def convert(tar_file, output_file):
     val_list = tar.extractfile(val_info).read()
 
      
+    print_processbar(0)
+
     lines = val_list.split('\n')
     val_dict = {}
     for line_idx, line in enumerate(lines):
@@ -163,7 +164,6 @@ def convert(tar_file, output_file):
         
         per_percentage = FULL_IMAGES/100 
         
-        print_processbar(0)
         idx = 0
         for imagedata in dataset.values():
             img = Image.open(StringIO.StringIO(imagedata))
