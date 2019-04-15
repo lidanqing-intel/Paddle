@@ -19,13 +19,12 @@ import sys
 import random
 import functools
 import contextlib
-from PIL import Image, ImageEnhance
+from PIL import Image
 import math
 from paddle.dataset.common import download
 import tarfile
 
 from timeit import default_timer as timer
-from datetime import timedelta
 import StringIO
 
 
@@ -145,13 +144,10 @@ def convert(tar_file, output_file):
 
      
     lines = val_list.split('\n')
-    num_images = len(lines)
-    print(num_images)
     val_dict = {}
     for line_idx, line in enumerate(lines):
-        if line_idx == 50000:
+        if line_idx == FULL_IMAGES:
             break
-        #print(line.split())
         name, label = line.split()
         val_dict[name] = label
 
@@ -162,7 +158,7 @@ def convert(tar_file, output_file):
         
     with open(output_file, "w+b") as ofs:
         ofs.seek(0)
-        num = np.array(int(num_images)).astype('int64')
+        num = np.array(int(FULL_IMAGES)).astype('int64')
         ofs.write(num.tobytes())
         
         per_percentage = FULL_IMAGES/100 
