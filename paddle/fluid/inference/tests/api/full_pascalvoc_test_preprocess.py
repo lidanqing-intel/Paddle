@@ -13,7 +13,7 @@
 # limitations under the License.
 
 #import image_util
-from paddle.utils.image_util import *
+#from paddle.utils.image_util import *
 from PIL import Image
 import numpy as np
 import xml.etree.ElementTree
@@ -30,12 +30,9 @@ RESIZE_H = 300
 RESIZE_W = 300
 mean_value = [127.5, 127.5, 127.5]
 ap_version = '11point'
-IMAGE_OUT = 'image.bin'
-ANNOTATION_OUT = 'annotation.bin'
+IMAGE_OUT = '111pascalvoc.bin'
 
 DATA_DIR = os.path.expanduser(DATA_DIR)
-
-# IMAGE_SIZE = 300*300*3*4952 = 
 
 
 def preprocess(img):
@@ -117,28 +114,23 @@ def pascalvoc():
         bbox_labels = np.array(bbox_labels)
         if len(bbox_labels) == 0: continue
 
-        # lbls.extend(bbox_labels[:, 0])
-        # boxes.extend(bbox_labels[:, 1:5])
-        # difficults.extend(bbox_labels[:, -1])
+        lbls.extend(bbox_labels[:, 0])
+        boxes.extend(bbox_labels[:, 1:5])
+        difficults.extend(bbox_labels[:, -1])
+
+    # Until here, image size is 5348160008
+    # num of lods
+    f1.write(np.array(object_nums).astype('uint64').tobytes())
+    print(object_nums)
+    print(len(object_nums))
+    # num of labels
+    f1.write(np.array(lbls).astype('int64').tobytes())
+
+    f1.write(np.array(boxes).astype('float32').tobytes())
+
+    f1.write(np.array(difficults).astype('int64').tobytes())
 
     f1.close()
-
-    annotation_out_path = os.path.join(DATA_DIR, ANNOTATION_OUT)
-    f2 = open(annotation_out_path, "w+b")
-
-    f2.seek(0)
-
-    f2.write(np.array(line_len).astype('int64').tobytes())
-
-    f2.write(np.array(object_nums).astype('int64').tobytes())
-
-    # f2.write(np.array(lbls).astype('int64').tobytes())
-
-    # f2.write(np.array(boxes).astype('float32').tobytes())
-
-    # f2.write(np.array(difficults).astype('int64').tobytes())
-
-    f2.close()
 
 
 if __name__ == "__main__":
