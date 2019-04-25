@@ -30,7 +30,7 @@ RESIZE_H = 300
 RESIZE_W = 300
 mean_value = [127.5, 127.5, 127.5]
 ap_version = '11point'
-IMAGE_OUT = 'image.bin'
+IMAGE_OUT = 'pascalvoc.bin'
 
 DATA_DIR = os.path.expanduser(DATA_DIR)
 
@@ -118,6 +118,7 @@ def pascalvoc():
         boxes.extend(bbox_labels[:, 1:5])
         difficults.extend(bbox_labels[:, -1])
 
+    # Until here, image size is 5348160008
     # num of lods
     f1.write(np.array(object_nums).astype('int').tobytes())
 

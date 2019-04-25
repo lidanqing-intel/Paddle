@@ -30,8 +30,7 @@ void SetConfig(AnalysisConfig *cfg) {
   cfg->EnableMKLDNN();
 }
 
-std::vector<int> LoadNextLod(std::ifstream &file, size_t offset,
-                             int total_images) {
+std::vector<int> LoadLod(std::ifstream &file, size_t offset, int total_images) {
   std::vector<int> lod;
   file.clear();
   file.seekg(offset);
@@ -42,40 +41,6 @@ std::vector<int> LoadNextLod(std::ifstream &file, size_t offset,
   return lod;
 }
 
-class ImageReader {
- public:
-  ImageReader(std::ifstream &file, size_t beginning_offset,
-              std::vector<int> shape, std::string name)
-      : file_(file), position(beginning_offset), name_(name), shape_(shape) {
-    numel = std::accumulate(shape_.begin(), shape_.end(), size_t{1},
-                            std::multiplies<size_t>());
-  }
-
-  PaddleTensor NextBatch() {
-    PaddleTensor tensor;
-    tensor.name = name_;
-    tensor.shape = shape_;
-    tensor.dtype = PaddleDType::FLOAT32;
-    tensor.data.Resize(numel * sizeof(float));
-
-    file_.seekg(position);
-    file_.read(static_cast<char *>(tensor.data.data()), numel * sizeof(float));
-    position = file_.tellg();
-
-    if (file_.eof()) LOG(ERROR) << name_ << ": reached end of stream";
-    if (file_.fail())
-      throw std::runtime_error(name_ + ": failed reading file.");
-
-    return tensor;
-  }
-
- protected:
-  std::ifstream &file_;
-  size_t position;
-  std::string name_;
-  std::vector<int> shape_;
-};
-
 template <typename T>
 class TensorReader {
  public:
@@ -83,16 +48,23 @@ class TensorReader {
       : file_(file), position(beginning_offset), name_(name) {}
 
   PaddleTensor NextBatch(std::vector<int> shape, vector<int> lod) {
+    numel = std::accumulate(shape.begin(), shape.end(), size_t{1},
+                            std::multiplies<size_t>());
     PaddleTensor tensor;
     tensor.name = name_;
     tensor.shape = shape;
-    numel = std::accumulate(shape.begin(), shape.end(), size_t{1},
-                            std::multiplies<size_t>());
-
     tensor.dtype = GetPaddleDType<T>();
     tensor.data.Resize(numel * sizeof(T));
-    tensor.lod.clear();
-    tensor.lod.push_back(batch_lod);
+    if (lod.empty() == False) {
+      tensor.lod.clear();
+      tensor.lod.push_back(lod);
+    }
+    file_.seekg(position);
+    file_.read(static_cast<char *>(tensor.data.data()), numel * sizeof(float));
+    position = file_.tellg();
+    if (file_.eof()) LOG(ERROR) << name_ << ": reached end of stream";
+    if (file_.fail())
+      throw std::runtime_error(name_ + ": failed reading file.");
     return tensor;
   }
 
@@ -113,62 +85,41 @@ void SetInput(std::vector<std::vector<PaddleTensor>> *inputs,
   file.read(reinterpret_cast<char *>(&total_images), sizeof(int64_t));
   LOG(INFO) << "Total images in file: " << total_images;
 
-  std::vector<int> image_batch_shape{batch_size, 3, 224, 224};
   auto image_beginning_offset = static_cast<size_t>(file.tellg());
   auto lod_offset_in_file =
       image_beginning_offset + sizeof(float) * total_images * 3 * 224 * 224;
-
   std::vector<int> lod_full_vector =
-      LoadNextLod(file, lod_offset_in_file, total_images);
+      LoadLod(file, lod_offset_in_file, total_images);
   vector<int>::const_iterator lod_first = lod_full_vector.begin();
   vector<int>::const_iterator lod_end = lod_full_vector.end();
-
   int sum_objects_num = std::accumulate(lod_first, lod_end, 0);
-
   auto labels_beginning_offset =
       lod_offset_in_file + sizeof(int) * total_images;
-
   auto bbox_beginning_offset =
       labels_beginning_offset + sizeof(int64_t) * sum_objects_num;
-
   auto difficult_beginning_offset =
       bbox_beginning_offset + sizeof(float) * sum_objects_num * 4;
-
-  ImageReader<float> image_reader(file, image_beginning_offset,
-                                  image_batch_shape, "image");
-
+  TensorReader<float> image_reader(file, image_beginning_offset, "image");
   TensorReader<int64_t> label_reader(file, labels_beginning_offset, "gt_label");
-
   TensorReader<float> bbox_reader(file, bbox_beginning_offset, "gt_bbox");
-
   TensorReader<int64_t> difficult_reader(file, difficult_beginning_offset,
                                          "gt_difficult");
-
   if (process_images == 0) process_images = total_images;
   auto iterations_max = process_images / batch_size;
   for (auto i = 0; i < iterations_max; i++) {
-    auto images_tensor = image_reader.NextBatch();
-
-    std::vector<int> batch_lod;
-
-    std::copy(lod_first + i * batch_size, lod_first + batch_size * (i + 1),
-              back_inserter(batch_lod));
-
+    auto images_tensor = image_reader.NextBatch({batch_size, 3, 224, 224}, {});
+    std::vector<int> batch_lod =
+        (lod_first + i * batch_size, lod_first + batch_size * (i + 1));
     batch_num_objects = std::accumulate(batch_lod.begin(), batch_lod.end(), 0);
-
     batch_lod.insert(batch_lod.begin(), 0);
     for (auto it = batch_lod.begin() + 1; it != batch_lod.end(); it++) {
       *it = *it + *(it - 1);
     }
-
     auto labels_tensor =
         label_reader.NextBatch({batch_num_objects, 1}, batch_lod);
-
     auto bbox_tensor = bbox_reader.NextBatch({batch_num_objects, 4}, batch_lod);
-
     auto difficult_tensor =
         difficult_reader.NextBatch({batch_num_objects, 1}, batch_lod);
-
     inputs->emplace_back(std::vector<PaddleTensor>{
         std::move(images_tensor), std::move(labels_tensor),
         std::move(bbox_tensor), std::move(difficult_tensor)});
