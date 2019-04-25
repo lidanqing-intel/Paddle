@@ -107,7 +107,7 @@ void SetInput(std::vector<std::vector<PaddleTensor>> *inputs,
   if (process_images == 0) process_images = total_images;
   auto iterations_max = process_images / batch_size;
   for (auto i = 0; i < iterations_max; i++) {
-    auto images_tensor = image_reader.NextBatch({batch_size, 3, 224, 224}, {});
+    auto images_tensor = image_reader.NextBatch({batch_size, 3, 300, 300}, {});
     std::vector<int> batch_lod =
         (lod_first + i * batch_size, lod_first + batch_size * (i + 1));
     batch_num_objects = std::accumulate(batch_lod.begin(), batch_lod.end(), 0);
