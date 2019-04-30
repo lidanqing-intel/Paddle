@@ -17,6 +17,8 @@ limitations under the License. */
 #include "paddle/fluid/inference/api/paddle_analysis_config.h"
 #include "paddle/fluid/inference/tests/api/tester_helper.h"
 
+// lod in the python should be int, that will be better. Otherwise it will say no matching function for call to ‘std::vector<std::vector<long unsigned int> >::push_back(std::vector<long int>
+
 namespace paddle {
 namespace inference {
 namespace analysis {
@@ -30,15 +32,24 @@ void SetConfig(AnalysisConfig *cfg) {
   cfg->EnableMKLDNN();
 }
 
-std::vector<int> LoadLod(std::ifstream &file, size_t offset, int total_images) {
-  std::vector<int> lod;
+std::vector<size_t> Load_numobjects_perimage(std::ifstream &file, size_t offset, int total_images) {
+  std::vector<int> num_objects_int;
+  std::vector<size_t> num_objects;
+  num_objects_int.resize(total_images);
+  num_objects.resize(total_images);
+
   file.clear();
   file.seekg(offset);
-  istream_iterator<int> fileStream(file);
-  std::copy_n(fileStream, total_images, std::back_inserter(lod));
-  if (file.eof()) LOG(ERROR) << name_ << ": reached end of stream";
-  if (file.fail()) throw std::runtime_error(name_ + ": failed reading file.");
-  return lod;
+  // How to copy from file to vector
+  file.read(reinterpret_cast<char *>(num_objects_int.data()), total_images*sizeof(int));
+
+  if (file.eof()) LOG(ERROR) << "Reached end of stream";
+  if (file.fail()) throw std::runtime_error("Failed reading file.");
+  // Convert the int to size_t
+  for(auto const& value: num_objects_int){
+    num_objects.push_back((size_t)value); 
+  }
+  return num_objects;
 }
 
 template <typename T>
@@ -47,15 +58,14 @@ class TensorReader {
   TensorReader(std::ifstream &file, size_t beginning_offset, std::string name)
       : file_(file), position(beginning_offset), name_(name) {}
 
-  PaddleTensor NextBatch(std::vector<int> shape, vector<int> lod) {
-    numel = std::accumulate(shape.begin(), shape.end(), size_t{1},
-                            std::multiplies<size_t>());
+  PaddleTensor NextBatch(std::vector<int> shape, std::vector<size_t> lod) {
+    int numel = std::accumulate(shape.begin(), shape.end(), 1, std::multiplies<int>());
     PaddleTensor tensor;
     tensor.name = name_;
     tensor.shape = shape;
     tensor.dtype = GetPaddleDType<T>();
     tensor.data.Resize(numel * sizeof(T));
-    if (lod.empty() == False) {
+    if (lod.empty() == false) {
       tensor.lod.clear();
       tensor.lod.push_back(lod);
     }
@@ -85,14 +95,12 @@ void SetInput(std::vector<std::vector<PaddleTensor>> *inputs,
   file.read(reinterpret_cast<char *>(&total_images), sizeof(int64_t));
   LOG(INFO) << "Total images in file: " << total_images;
 
-  auto image_beginning_offset = static_cast<size_t>(file.tellg());
-  auto lod_offset_in_file =
+  auto image_beginning_offset = static_cast<int>(file.tellg());
+  auto lod_offset_in_file = 
       image_beginning_offset + sizeof(float) * total_images * 3 * 224 * 224;
-  std::vector<int> lod_full_vector =
-      LoadLod(file, lod_offset_in_file, total_images);
-  vector<int>::const_iterator lod_first = lod_full_vector.begin();
-  vector<int>::const_iterator lod_end = lod_full_vector.end();
-  int sum_objects_num = std::accumulate(lod_first, lod_end, 0);
+  std::vector<size_t> lod_full =
+      Load_numobjects_perimage(file, lod_offset_in_file, total_images);
+  int sum_objects_num = (int)(std::accumulate(lod_full.begin(), lod_full.end(), 0));
   auto labels_beginning_offset =
       lod_offset_in_file + sizeof(int) * total_images;
   auto bbox_beginning_offset =
@@ -108,10 +116,10 @@ void SetInput(std::vector<std::vector<PaddleTensor>> *inputs,
   auto iterations_max = process_images / batch_size;
   for (auto i = 0; i < iterations_max; i++) {
     auto images_tensor = image_reader.NextBatch({batch_size, 3, 300, 300}, {});
-    std::vector<int> batch_lod =
-        (lod_first + i * batch_size, lod_first + batch_size * (i + 1));
-    batch_num_objects = std::accumulate(batch_lod.begin(), batch_lod.end(), 0);
-    batch_lod.insert(batch_lod.begin(), 0);
+    std::vector<size_t> batch_lod (lod_full.begin() + i * batch_size,
+                                     lod_full.begin() + batch_size * (i + 1));
+    int batch_num_objects = (int)std::accumulate(batch_lod.begin(), batch_lod.end(), 0);
+    batch_lod.insert(batch_lod.begin(), size_t{0});
     for (auto it = batch_lod.begin() + 1; it != batch_lod.end(); it++) {
       *it = *it + *(it - 1);
     }
@@ -126,12 +134,86 @@ void SetInput(std::vector<std::vector<PaddleTensor>> *inputs,
   }
 }
 
-std::shared_ptr<std::vector<PaddleTensor>> GetWarmupData(
-    std::ifstream &file, int64_t num_images = FLAGS_warmup_batch_size) {
-  SetInput(std::vector<std::vector<PaddleTensor>> * inputs,
-           FLAGS_warmup_batch_size, FLAGS_warmup_batch_size);
+// std::shared_ptr<std::vector<PaddleTensor>> GetWarmupData(std::vector<std::vector<PaddleTensor>> inputs) {
+//   SetInput(&inputs,
+//            FLAGS_warmup_batch_size, FLAGS_warmup_batch_size);
 
-  auto warmup_data = std::make_shared<std::vector<PaddleTensor>>(inputs);
+//   auto warmup_data = std::make_shared<std::vector<PaddleTensor>>(4);
+//   (*warmup_data)[0] = std::move(inputs[0]);
+//   (*warmup_data)[1] = std::move(inputs[1]);
+//   (*warmup_data)[2] = std::move(inputs[2]);
+//   (*warmup_data)[3] = std::move(inputs[3]);
+//   return warmup_data;
+// }
+
+std::shared_ptr<std::vector<PaddleTensor>> GetWarmupData(
+    const std::vector<std::vector<PaddleTensor>> &test_data,
+    int num_images = FLAGS_warmup_batch_size) {
+  int test_data_batch_size = test_data[0][0].shape[0];
+  auto iterations_max = test_data.size();
+  PADDLE_ENFORCE(
+      static_cast<size_t>(num_images) <= iterations_max * test_data_batch_size,
+      "The requested quantization warmup data size " +
+          std::to_string(num_images) + " is bigger than all test data size.");
+
+  PaddleTensor images;
+  images.name = "image";
+  images.shape = {num_images, 3, 300, 300};
+  images.dtype = PaddleDType::FLOAT32;
+  images.data.Resize(sizeof(float) * num_images * 3 * 300 * 300);
+
+  int batches = num_images / test_data_batch_size;
+  int batch_remain = num_images % test_data_batch_size;
+  int num_objects = 0;
+  for (int i = 0; i < batches; i++){
+   num_objects = num_objects + (int)test_data[i][1].lod[0][test_data_batch_size];//lod has batch_size + 1 elements because of 0 at the begining
+  }
+  num_objects = num_objects + (int)test_data[batches][1].lod[0][batch_remain];
+  
+  int batch_num_objects = num_objects;
+
+  PaddleTensor labels;
+  labels.name = "gt_label";
+  labels.shape = {batch_num_objects, 1};
+  labels.dtype = PaddleDType::INT64;
+  labels.data.Resize(sizeof(int64_t) * batch_num_objects);
+
+  PaddleTensor bbox;
+  bbox.name = "gt_bbox";
+  bbox.shape = {batch_num_objects, 4};
+  bbox.dtype = PaddleDType::FLOAT32;
+  bbox.data.Resize(sizeof(float) * batch_num_objects * 4);
+
+  PaddleTensor difficult;
+  difficult.name = "gt_difficult";
+  difficult.shape = {batch_num_objects, 4};
+  difficult.dtype = PaddleDType::INT64;
+  difficult.data.Resize(sizeof(int64_t) * batch_num_objects);
+
+  int objects_accum = 0;
+  int objects_in_batch = 0;
+  for (int i = 0; i < batches; i++) {
+    objects_in_batch = (int)test_data[i][1].lod[0][test_data_batch_size];
+    std::copy_n(static_cast<float *>(test_data[i][0].data.data()), test_data_batch_size* 3 * 300 * 300, static_cast<float *>(images.data.data()) + i * test_data_batch_size * 3 * 300 * 300);
+    std::copy_n(static_cast<int64_t *>(test_data[i][1].data.data()), objects_in_batch, static_cast<int64_t *>(labels.data.data()) + objects_accum);
+    std::copy_n(static_cast<float *>(test_data[i][2].data.data()), objects_in_batch*4, static_cast<float *>(bbox.data.data()) + objects_accum * 4);
+    std::copy_n(static_cast<int64_t *>(test_data[i][3].data.data()), objects_in_batch, static_cast<int64_t *>(difficult.data.data()) + objects_accum);
+    objects_accum = objects_accum + objects_in_batch;
+    }
+
+  int objects_remain = test_data[batches][1].lod[0][batch_remain];
+  std::copy_n(static_cast<float *>(test_data[batches][0].data.data()), batch_remain* 3 * 300 * 300, static_cast<float *>(images.data.data())+ objects_accum* 3 * 300 * 300);
+  std::copy_n(static_cast<int64_t *>(test_data[batches][1].data.data()), objects_remain, static_cast<int64_t *>(labels.data.data()) + objects_accum);
+  std::copy_n(static_cast<float *>(test_data[batches][2].data.data()), objects_remain*4, static_cast<float *>(bbox.data.data()) + objects_accum * 4);
+  std::copy_n(static_cast<int64_t *>(test_data[batches][3].data.data()), objects_remain, static_cast<int64_t *>(difficult.data.data()) + objects_accum);
+
+  
+  auto warmup_data = std::make_shared<std::vector<PaddleTensor>>(4);
+  (*warmup_data)[0] = std::move(images);
+  (*warmup_data)[1] = std::move(labels);
+  (*warmup_data)[2] = std::move(bbox);
+  (*warmup_data)[3] = std::move(difficult);
+
 
   return warmup_data;
 }
@@ -147,10 +229,11 @@ TEST(Analyzer_int8_resnet50, quantization) {
   std::vector<std::vector<PaddleTensor>> input_slots_all;
   SetInput(&input_slots_all);
 
+  std::vector<std::vector<PaddleTensor>> warmup_input;
   // prepare warmup batch from input data read earlier
   // warmup batch size can be different than batch size
   std::shared_ptr<std::vector<PaddleTensor>> warmup_data =
-      GetWarmupData(input_slots_all);
+      GetWarmupData(warmup_input);
 
   // configure quantizer
   q_cfg.EnableMkldnnQuantizer();
