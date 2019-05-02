@@ -104,7 +104,7 @@ void SetInput(std::vector<std::vector<PaddleTensor>> *inputs,
   auto labels_beginning_offset =
       lod_offset_in_file + sizeof(int) * total_images;
   auto bbox_beginning_offset =
-      labels_beginning_offset + sizeof(int64_t) * sum_objects_num;
+      labels_beginning_offset + sizeof(int) * sum_objects_num;
   auto difficult_beginning_offset =
       bbox_beginning_offset + sizeof(float) * sum_objects_num * 4;
   TensorReader<float> image_reader(file, image_beginning_offset, "image");
@@ -133,18 +133,6 @@ void SetInput(std::vector<std::vector<PaddleTensor>> *inputs,
         std::move(bbox_tensor), std::move(difficult_tensor)});
   }
 }
-
-// std::shared_ptr<std::vector<PaddleTensor>> GetWarmupData(std::vector<std::vector<PaddleTensor>> inputs) {
-//   SetInput(&inputs,
-//            FLAGS_warmup_batch_size, FLAGS_warmup_batch_size);
-
-//   auto warmup_data = std::make_shared<std::vector<PaddleTensor>>(4);
-//   (*warmup_data)[0] = std::move(inputs[0]);
-//   (*warmup_data)[1] = std::move(inputs[1]);
-//   (*warmup_data)[2] = std::move(inputs[2]);
-//   (*warmup_data)[3] = std::move(inputs[3]);
-//   return warmup_data;
-// }
 
 std::shared_ptr<std::vector<PaddleTensor>> GetWarmupData(
     const std::vector<std::vector<PaddleTensor>> &test_data,
@@ -207,18 +195,16 @@ std::shared_ptr<std::vector<PaddleTensor>> GetWarmupData(
   std::copy_n(static_cast<float *>(test_data[batches][2].data.data()), objects_remain*4, static_cast<float *>(bbox.data.data()) + objects_accum * 4);
   std::copy_n(static_cast<int64_t *>(test_data[batches][3].data.data()), objects_remain, static_cast<int64_t *>(difficult.data.data()) + objects_accum);
 
-  
   auto warmup_data = std::make_shared<std::vector<PaddleTensor>>(4);
   (*warmup_data)[0] = std::move(images);
   (*warmup_data)[1] = std::move(labels);
   (*warmup_data)[2] = std::move(bbox);
   (*warmup_data)[3] = std::move(difficult);
 
-
   return warmup_data;
 }
 
-TEST(Analyzer_int8_resnet50, quantization) {
+TEST(Analyzer_int8_mobilenet_ssd, quantization) {
   AnalysisConfig cfg;
   SetConfig(&cfg);
 
@@ -229,11 +215,10 @@ TEST(Analyzer_int8_resnet50, quantization) {
   std::vector<std::vector<PaddleTensor>> input_slots_all;
   SetInput(&input_slots_all);
 
-  std::vector<std::vector<PaddleTensor>> warmup_input;
   // prepare warmup batch from input data read earlier
   // warmup batch size can be different than batch size
   std::shared_ptr<std::vector<PaddleTensor>> warmup_data =
-      GetWarmupData(warmup_input);
+      GetWarmupData(input_slots_all);
 
   // configure quantizer
   q_cfg.EnableMkldnnQuantizer();

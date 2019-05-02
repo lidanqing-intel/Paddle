@@ -13,7 +13,7 @@
 # limitations under the License.
 
 #import image_util
-from paddle.utils.image_util import *
+#from paddle.utils.image_util import *
 from PIL import Image
 import numpy as np
 import xml.etree.ElementTree
@@ -120,9 +120,10 @@ def pascalvoc():
 
     # Until here, image size is 5348160008
     # num of lods
-    f1.write(np.array(object_nums).astype('int').tobytes())
-
-    # num of labels
+    f1.write(np.array(object_nums).astype('uint64').tobytes())
+    print(object_nums)
+    print(len(object_nums))
+# num of labels
     f1.write(np.array(lbls).astype('int64').tobytes())
 
     f1.write(np.array(boxes).astype('float32').tobytes())
