@@ -17,7 +17,9 @@ limitations under the License. */
 #include "paddle/fluid/inference/api/paddle_analysis_config.h"
 #include "paddle/fluid/inference/tests/api/tester_helper.h"
 
-// lod in the python should be int, that will be better. Otherwise it will say no matching function for call to ‘std::vector<std::vector<long unsigned int> >::push_back(std::vector<long int>
+// lod in the python should be int, that will be better. Otherwise it will say
+// no matching function for call to ‘std::vector<std::vector<long unsigned int>
+// >::push_back(std::vector<long int>
 
 namespace paddle {
 namespace inference {
@@ -32,23 +34,20 @@ void SetConfig(AnalysisConfig *cfg) {
   cfg->EnableMKLDNN();
 }
 
-std::vector<size_t> Load_numobjects_perimage(std::ifstream &file, size_t offset, int total_images) {
-  std::vector<int> num_objects_int;
+std::vector<size_t> Load_numobjects_perimage(std::ifstream &file, size_t offset,
+                                             int64_t total_images) {
   std::vector<size_t> num_objects;
-  num_objects_int.resize(total_images);
   num_objects.resize(total_images);
 
   file.clear();
   file.seekg(offset);
   // How to copy from file to vector
-  file.read(reinterpret_cast<char *>(num_objects_int.data()), total_images*sizeof(int));
+  file.read(reinterpret_cast<char *>(num_objects.data()),
+            total_images * sizeof(size_t));
 
   if (file.eof()) LOG(ERROR) << "Reached end of stream";
   if (file.fail()) throw std::runtime_error("Failed reading file.");
   // Convert the int to size_t
-  for(auto const& value: num_objects_int){
-    num_objects.push_back((size_t)value); 
-  }
   return num_objects;
 }
 
@@ -59,7 +58,8 @@ class TensorReader {
       : file_(file), position(beginning_offset), name_(name) {}
 
   PaddleTensor NextBatch(std::vector<int> shape, std::vector<size_t> lod) {
-    int numel = std::accumulate(shape.begin(), shape.end(), 1, std::multiplies<int>());
+    size_t numel = std::accumulate(shape.begin(), shape.end(), size_t{1},
+                                   std::multiplies<size_t>());
     PaddleTensor tensor;
     tensor.name = name_;
     tensor.shape = shape;
@@ -70,7 +70,7 @@ class TensorReader {
       tensor.lod.push_back(lod);
     }
     file_.seekg(position);
-    file_.read(static_cast<char *>(tensor.data.data()), numel * sizeof(float));
+    file_.read(static_cast<char *>(tensor.data.data()), numel * sizeof(T));
     position = file_.tellg();
     if (file_.eof()) LOG(ERROR) << name_ << ": reached end of stream";
     if (file_.fail())
@@ -95,18 +95,20 @@ void SetInput(std::vector<std::vector<PaddleTensor>> *inputs,
   file.read(reinterpret_cast<char *>(&total_images), sizeof(int64_t));
   LOG(INFO) << "Total images in file: " << total_images;
 
-  auto image_beginning_offset = static_cast<int>(file.tellg());
-  auto lod_offset_in_file = 
-      image_beginning_offset + sizeof(float) * total_images * 3 * 224 * 224;
+  size_t image_beginning_offset = static_cast<size_t>(file.tellg());
+  auto lod_offset_in_file =
+      image_beginning_offset + sizeof(float) * total_images * 3 * 300 * 300;
   std::vector<size_t> lod_full =
       Load_numobjects_perimage(file, lod_offset_in_file, total_images);
-  int sum_objects_num = (int)(std::accumulate(lod_full.begin(), lod_full.end(), 0));
+  size_t sum_objects_num =
+      std::accumulate(lod_full.begin(), lod_full.end(), size_t{0});
   auto labels_beginning_offset =
-      lod_offset_in_file + sizeof(int) * total_images;
+      lod_offset_in_file + sizeof(size_t) * total_images;
   auto bbox_beginning_offset =
-      labels_beginning_offset + sizeof(int) * sum_objects_num;
+      labels_beginning_offset + sizeof(int64_t) * sum_objects_num;
   auto difficult_beginning_offset =
       bbox_beginning_offset + sizeof(float) * sum_objects_num * 4;
+
   TensorReader<float> image_reader(file, image_beginning_offset, "image");
   TensorReader<int64_t> label_reader(file, labels_beginning_offset, "gt_label");
   TensorReader<float> bbox_reader(file, bbox_beginning_offset, "gt_bbox");
@@ -116,9 +118,10 @@ void SetInput(std::vector<std::vector<PaddleTensor>> *inputs,
   auto iterations_max = process_images / batch_size;
   for (auto i = 0; i < iterations_max; i++) {
     auto images_tensor = image_reader.NextBatch({batch_size, 3, 300, 300}, {});
-    std::vector<size_t> batch_lod (lod_full.begin() + i * batch_size,
-                                     lod_full.begin() + batch_size * (i + 1));
-    int batch_num_objects = (int)std::accumulate(batch_lod.begin(), batch_lod.end(), 0);
+    std::vector<size_t> batch_lod(lod_full.begin() + i * batch_size,
+                                  lod_full.begin() + batch_size * (i + 1));
+    size_t batch_num_objects =
+        std::accumulate(batch_lod.begin(), batch_lod.end(), size_t{0});
     batch_lod.insert(batch_lod.begin(), size_t{0});
     for (auto it = batch_lod.begin() + 1; it != batch_lod.end(); it++) {
       *it = *it + *(it - 1);
@@ -152,48 +155,70 @@ std::shared_ptr<std::vector<PaddleTensor>> GetWarmupData(
 
   int batches = num_images / test_data_batch_size;
   int batch_remain = num_images % test_data_batch_size;
-  int num_objects = 0;
-  for (int i = 0; i < batches; i++){
-   num_objects = num_objects + (int)test_data[i][1].lod[0][test_data_batch_size];//lod has batch_size + 1 elements because of 0 at the begining
+  size_t num_objects = test_data[0][1].lod[0][test_data_batch_size];
+  std::vector<size_t> accum_lod = test_data[0][1].lod;
+  accum_lod.resize(num_images);
+
+  for (int i = 1; i < batches; i++) {
+    num_objects =
+        test_data[i][1].lod[0][test_data_batch_size];  // lod has batch_size + 1
+                                                       // elements because of 0
+                                                       // at the begining
   }
-  num_objects = num_objects + (int)test_data[batches][1].lod[0][batch_remain];
-  
-  int batch_num_objects = num_objects;
+  num_objects = num_objects + test_data[batches][1].lod[0][batch_remain];
 
   PaddleTensor labels;
   labels.name = "gt_label";
   labels.shape = {batch_num_objects, 1};
   labels.dtype = PaddleDType::INT64;
-  labels.data.Resize(sizeof(int64_t) * batch_num_objects);
+  labels.data.Resize(sizeof(int64_t) * num_objects);
 
   PaddleTensor bbox;
   bbox.name = "gt_bbox";
   bbox.shape = {batch_num_objects, 4};
   bbox.dtype = PaddleDType::FLOAT32;
-  bbox.data.Resize(sizeof(float) * batch_num_objects * 4);
+  bbox.data.Resize(sizeof(float) * num_objects * 4);
 
   PaddleTensor difficult;
   difficult.name = "gt_difficult";
   difficult.shape = {batch_num_objects, 4};
   difficult.dtype = PaddleDType::INT64;
-  difficult.data.Resize(sizeof(int64_t) * batch_num_objects);
+  difficult.data.Resize(sizeof(int64_t) * num_objects);
 
-  int objects_accum = 0;
-  int objects_in_batch = 0;
+  size_t objects_accum = 0;
+  size_t objects_in_batch = 0;
   for (int i = 0; i < batches; i++) {
-    objects_in_batch = (int)test_data[i][1].lod[0][test_data_batch_size];
-    std::copy_n(static_cast<float *>(test_data[i][0].data.data()), test_data_batch_size* 3 * 300 * 300, static_cast<float *>(images.data.data()) + i * test_data_batch_size * 3 * 300 * 300);
-    std::copy_n(static_cast<int64_t *>(test_data[i][1].data.data()), objects_in_batch, static_cast<int64_t *>(labels.data.data()) + objects_accum);
-    std::copy_n(static_cast<float *>(test_data[i][2].data.data()), objects_in_batch*4, static_cast<float *>(bbox.data.data()) + objects_accum * 4);
-    std::copy_n(static_cast<int64_t *>(test_data[i][3].data.data()), objects_in_batch, static_cast<int64_t *>(difficult.data.data()) + objects_accum);
+    objects_in_batch = test_data[i][1].lod[0][test_data_batch_size];
+    std::copy_n(static_cast<float *>(test_data[i][0].data.data()),
+                test_data_batch_size * 3 * 300 * 300,
+                static_cast<float *>(images.data.data()) +
+                    i * test_data_batch_size * 3 * 300 * 300);
+    std::copy_n(static_cast<int64_t *>(test_data[i][1].data.data()),
+                objects_in_batch,
+                static_cast<int64_t *>(labels.data.data()) + objects_accum);
+    std::copy_n(static_cast<float *>(test_data[i][2].data.data()),
+                objects_in_batch * 4,
+                static_cast<float *>(bbox.data.data()) + objects_accum * 4);
+    std::copy_n(static_cast<int64_t *>(test_data[i][3].data.data()),
+                objects_in_batch,
+                static_cast<int64_t *>(difficult.data.data()) + objects_accum);
     objects_accum = objects_accum + objects_in_batch;
-    }
+  }
 
-  int objects_remain = test_data[batches][1].lod[0][batch_remain];
-  std::copy_n(static_cast<float *>(test_data[batches][0].data.data()), batch_remain* 3 * 300 * 300, static_cast<float *>(images.data.data())+ objects_accum* 3 * 300 * 300);
-  std::copy_n(static_cast<int64_t *>(test_data[batches][1].data.data()), objects_remain, static_cast<int64_t *>(labels.data.data()) + objects_accum);
-  std::copy_n(static_cast<float *>(test_data[batches][2].data.data()), objects_remain*4, static_cast<float *>(bbox.data.data()) + objects_accum * 4);
-  std::copy_n(static_cast<int64_t *>(test_data[batches][3].data.data()), objects_remain, static_cast<int64_t *>(difficult.data.data()) + objects_accum);
+  size_t objects_remain = test_data[batches][1].lod[0][batch_remain];
+  std::copy_n(
+      static_cast<float *>(test_data[batches][0].data.data()),
+      batch_remain * 3 * 300 * 300,
+      static_cast<float *>(images.data.data()) + objects_accum * 3 * 300 * 300);
+  std::copy_n(static_cast<int64_t *>(test_data[batches][1].data.data()),
+              objects_remain,
+              static_cast<int64_t *>(labels.data.data()) + objects_accum);
+  std::copy_n(static_cast<float *>(test_data[batches][2].data.data()),
+              objects_remain * 4,
+              static_cast<float *>(bbox.data.data()) + objects_accum * 4);
+  std::copy_n(static_cast<int64_t *>(test_data[batches][3].data.data()),
+              objects_remain,
+              static_cast<int64_t *>(difficult.data.data()) + objects_accum);
 
   auto warmup_data = std::make_shared<std::vector<PaddleTensor>>(4);
   (*warmup_data)[0] = std::move(images);

@@ -30,7 +30,7 @@ RESIZE_H = 300
 RESIZE_W = 300
 mean_value = [127.5, 127.5, 127.5]
 ap_version = '11point'
-IMAGE_OUT = 'pascalvoc.bin'
+IMAGE_OUT = '111pascalvoc.bin'
 
 DATA_DIR = os.path.expanduser(DATA_DIR)
 
@@ -123,7 +123,7 @@ def pascalvoc():
     f1.write(np.array(object_nums).astype('uint64').tobytes())
     print(object_nums)
     print(len(object_nums))
-# num of labels
+    # num of labels
     f1.write(np.array(lbls).astype('int64').tobytes())
 
     f1.write(np.array(boxes).astype('float32').tobytes())
