@@ -58,8 +58,7 @@ class TensorReader {
       : file_(file), position(beginning_offset), name_(name) {}
 
   PaddleTensor NextBatch(std::vector<int> shape, std::vector<size_t> lod) {
-    size_t numel = std::accumulate(shape.begin(), shape.end(), size_t{1},
-                                   std::multiplies<size_t>());
+    int numel = std::accumulate(shape.begin(), shape.end(), 1, std::multiplies<int>());
     PaddleTensor tensor;
     tensor.name = name_;
     tensor.shape = shape;
@@ -101,7 +100,7 @@ void SetInput(std::vector<std::vector<PaddleTensor>> *inputs,
   std::vector<size_t> lod_full =
       Load_numobjects_perimage(file, lod_offset_in_file, total_images);
   size_t sum_objects_num =
-      std::accumulate(lod_full.begin(), lod_full.end(), size_t{0});
+      std::accumulate(lod_full.begin(), lod_full.end(), 0UL);
   auto labels_beginning_offset =
       lod_offset_in_file + sizeof(size_t) * total_images;
   auto bbox_beginning_offset =
@@ -121,8 +120,8 @@ void SetInput(std::vector<std::vector<PaddleTensor>> *inputs,
     std::vector<size_t> batch_lod(lod_full.begin() + i * batch_size,
                                   lod_full.begin() + batch_size * (i + 1));
     size_t batch_num_objects =
-        std::accumulate(batch_lod.begin(), batch_lod.end(), size_t{0});
-    batch_lod.insert(batch_lod.begin(), size_t{0});
+        std::accumulate(batch_lod.begin(), batch_lod.end(), 0UL);
+    batch_lod.insert(batch_lod.begin(), 0UL);
     for (auto it = batch_lod.begin() + 1; it != batch_lod.end(); it++) {
       *it = *it + *(it - 1);
     }
@@ -139,7 +138,7 @@ void SetInput(std::vector<std::vector<PaddleTensor>> *inputs,
 
 std::shared_ptr<std::vector<PaddleTensor>> GetWarmupData(
     const std::vector<std::vector<PaddleTensor>> &test_data,
-    int num_images = FLAGS_warmup_batch_size) {
+    int32_t num_images = FLAGS_warmup_batch_size) {
   int test_data_batch_size = test_data[0][0].shape[0];
   auto iterations_max = test_data.size();
   PADDLE_ENFORCE(
@@ -169,19 +168,19 @@ std::shared_ptr<std::vector<PaddleTensor>> GetWarmupData(
 
   PaddleTensor labels;
   labels.name = "gt_label";
-  labels.shape = {batch_num_objects, 1};
+  labels.shape = {static_cast<int>(num_objects), 1};
   labels.dtype = PaddleDType::INT64;
   labels.data.Resize(sizeof(int64_t) * num_objects);
 
   PaddleTensor bbox;
   bbox.name = "gt_bbox";
-  bbox.shape = {batch_num_objects, 4};
+  bbox.shape = {static_cast<int>(num_objects), 4};
   bbox.dtype = PaddleDType::FLOAT32;
   bbox.data.Resize(sizeof(float) * num_objects * 4);
 
   PaddleTensor difficult;
   difficult.name = "gt_difficult";
-  difficult.shape = {batch_num_objects, 4};
+  difficult.shape = {static_cast<int>(num_objects), 4};
   difficult.dtype = PaddleDType::INT64;
   difficult.data.Resize(sizeof(int64_t) * num_objects);
 
