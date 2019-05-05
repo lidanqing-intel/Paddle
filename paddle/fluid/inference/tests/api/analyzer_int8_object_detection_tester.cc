@@ -126,10 +126,10 @@ void SetInput(std::vector<std::vector<PaddleTensor>> *inputs,
       *it = *it + *(it - 1);
     }
     auto labels_tensor =
-        label_reader.NextBatch({batch_num_objects, 1}, batch_lod);
-    auto bbox_tensor = bbox_reader.NextBatch({batch_num_objects, 4}, batch_lod);
+        label_reader.NextBatch({static_cast<int>(batch_num_objects), 1}, batch_lod);
+    auto bbox_tensor = bbox_reader.NextBatch({static_cast<int>(batch_num_objects), 4}, batch_lod);
     auto difficult_tensor =
-        difficult_reader.NextBatch({batch_num_objects, 1}, batch_lod);
+        difficult_reader.NextBatch({static_cast<int>(batch_num_objects), 1}, batch_lod);
     inputs->emplace_back(std::vector<PaddleTensor>{
         std::move(images_tensor), std::move(labels_tensor),
         std::move(bbox_tensor), std::move(difficult_tensor)});
@@ -155,7 +155,7 @@ std::shared_ptr<std::vector<PaddleTensor>> GetWarmupData(
   int batches = num_images / test_data_batch_size;
   int batch_remain = num_images % test_data_batch_size;
   size_t num_objects = test_data[0][1].lod[0][test_data_batch_size];
-  std::vector<size_t> accum_lod = test_data[0][1].lod;
+  std::vector<size_t> accum_lod(test_data[0][1].lod[0]);
   accum_lod.resize(num_images);
 
   for (int i = 1; i < batches; i++) {
@@ -163,6 +163,9 @@ std::shared_ptr<std::vector<PaddleTensor>> GetWarmupData(
         test_data[i][1].lod[0][test_data_batch_size];  // lod has batch_size + 1
                                                        // elements because of 0
                                                        // at the begining
+    //push back a new vector
+    std::copy(test_data[i][1].lod[0].begin() + 1, test_data[i][1].lod[0].end(), std::back_inserter(accum_lod));
+    //change the vector contents
   }
   num_objects = num_objects + test_data[batches][1].lod[0][batch_remain];
 
