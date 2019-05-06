@@ -29,7 +29,7 @@ void SetConfig(AnalysisConfig *cfg) {
   cfg->SetModel(FLAGS_infer_model);
   cfg->DisableGpu();
   cfg->SwitchIrOptim();
-  cfg->SwitchSpecifyInputNames();
+  //cfg->SwitchSpecifyInputNames();
   cfg->SetCpuMathLibraryNumThreads(FLAGS_paddle_num_threads);
   cfg->EnableMKLDNN();
 }
