@@ -142,7 +142,7 @@ std::shared_ptr<std::vector<PaddleTensor>> GetWarmupData(
   int test_data_batch_size = test_data[0][0].shape[0];
   auto iterations_max = test_data.size();
   PADDLE_ENFORCE(
-      static_cast<size_t>(num_images) <= iterations_max * test_data_batch_size,
+      static_cast<int32_t>(num_images) <= iterations_max * test_data_batch_size,
       "The requested quantization warmup data size " +
           std::to_string(num_images) + " is bigger than all test data size.");
 
