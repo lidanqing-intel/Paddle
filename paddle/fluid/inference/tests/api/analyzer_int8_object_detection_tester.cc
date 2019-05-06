@@ -159,13 +159,13 @@ std::shared_ptr<std::vector<PaddleTensor>> GetWarmupData(
   accum_lod.resize(num_images);
 
   for (int i = 1; i < batches; i++) {
-    num_objects =
+    //change the vector contents
+    std::transform(test_data[i][1].lod[0].begin() + 1, test_data[i][1].lod[0].end(), std::back_inserter(accum_lod), [&num_objects](size_t lodtemp) -> size_t { return lodtemp + num_objects; });
+    num_objects +=
         test_data[i][1].lod[0][test_data_batch_size];  // lod has batch_size + 1
                                                        // elements because of 0
                                                        // at the begining
-    //push back a new vector
-    std::copy(test_data[i][1].lod[0].begin() + 1, test_data[i][1].lod[0].end(), std::back_inserter(accum_lod));
-    //change the vector contents
+
   }
   num_objects = num_objects + test_data[batches][1].lod[0][batch_remain];
 
