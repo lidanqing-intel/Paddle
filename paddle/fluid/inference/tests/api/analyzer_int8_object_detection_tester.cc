@@ -29,13 +29,13 @@ void SetConfig(AnalysisConfig *cfg) {
   cfg->SetModel(FLAGS_infer_model);
   cfg->DisableGpu();
   cfg->SwitchIrOptim();
-  //cfg->SwitchSpecifyInputNames();
+  // cfg->SwitchSpecifyInputNames();
   cfg->SetCpuMathLibraryNumThreads(FLAGS_paddle_num_threads);
   cfg->EnableMKLDNN();
 }
 
-std::vector<size_t> Load_numobjects_perimage(std::ifstream &file, size_t offset,
-                                             int64_t total_images) {
+std::vector<size_t> ReadObjectsNum(std::ifstream &file, size_t offset,
+                                   int64_t total_images) {
   std::vector<size_t> num_objects;
   num_objects.resize(total_images);
 
@@ -58,7 +58,8 @@ class TensorReader {
       : file_(file), position(beginning_offset), name_(name) {}
 
   PaddleTensor NextBatch(std::vector<int> shape, std::vector<size_t> lod) {
-    int numel = std::accumulate(shape.begin(), shape.end(), 1, std::multiplies<int>());
+    int numel =
+        std::accumulate(shape.begin(), shape.end(), 1, std::multiplies<int>());
     PaddleTensor tensor;
     tensor.name = name_;
     tensor.shape = shape;
@@ -98,7 +99,7 @@ void SetInput(std::vector<std::vector<PaddleTensor>> *inputs,
   auto lod_offset_in_file =
       image_beginning_offset + sizeof(float) * total_images * 3 * 300 * 300;
   std::vector<size_t> lod_full =
-      Load_numobjects_perimage(file, lod_offset_in_file, total_images);
+      ReadObjectsNum(file, lod_offset_in_file, total_images);
   size_t sum_objects_num =
       std::accumulate(lod_full.begin(), lod_full.end(), 0UL);
   auto labels_beginning_offset =
@@ -125,11 +126,12 @@ void SetInput(std::vector<std::vector<PaddleTensor>> *inputs,
     for (auto it = batch_lod.begin() + 1; it != batch_lod.end(); it++) {
       *it = *it + *(it - 1);
     }
-    auto labels_tensor =
-        label_reader.NextBatch({static_cast<int>(batch_num_objects), 1}, batch_lod);
-    auto bbox_tensor = bbox_reader.NextBatch({static_cast<int>(batch_num_objects), 4}, batch_lod);
-    auto difficult_tensor =
-        difficult_reader.NextBatch({static_cast<int>(batch_num_objects), 1}, batch_lod);
+    auto labels_tensor = label_reader.NextBatch(
+        {static_cast<int>(batch_num_objects), 1}, batch_lod);
+    auto bbox_tensor = bbox_reader.NextBatch(
+        {static_cast<int>(batch_num_objects), 4}, batch_lod);
+    auto difficult_tensor = difficult_reader.NextBatch(
+        {static_cast<int>(batch_num_objects), 1}, batch_lod);
     inputs->emplace_back(std::vector<PaddleTensor>{
         std::move(images_tensor), std::move(labels_tensor),
         std::move(bbox_tensor), std::move(difficult_tensor)});
@@ -159,13 +161,16 @@ std::shared_ptr<std::vector<PaddleTensor>> GetWarmupData(
   accum_lod.resize(num_images);
 
   for (int i = 1; i < batches; i++) {
-    //change the vector contents
-    std::transform(test_data[i][1].lod[0].begin() + 1, test_data[i][1].lod[0].end(), std::back_inserter(accum_lod), [&num_objects](size_t lodtemp) -> size_t { return lodtemp + num_objects; });
+    // change the vector contents
+    std::transform(test_data[i][1].lod[0].begin() + 1,
+                   test_data[i][1].lod[0].end(), std::back_inserter(accum_lod),
+                   [&num_objects](size_t lodtemp) -> size_t {
+                     return lodtemp + num_objects;
+                   });
     num_objects +=
         test_data[i][1].lod[0][test_data_batch_size];  // lod has batch_size + 1
                                                        // elements because of 0
                                                        // at the begining
-
   }
   num_objects = num_objects + test_data[batches][1].lod[0][batch_remain];
 
