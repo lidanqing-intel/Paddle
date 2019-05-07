@@ -58,7 +58,7 @@ class TensorReader {
   TensorReader(std::ifstream &file, size_t beginning_offset, std::string name)
       : file_(file), position(beginning_offset), name_(name) {}
 
-  PaddleTensor NextBatch(std::vector<int> shape, std::vector<size_t> &lod) {
+  PaddleTensor NextBatch(std::vector<int> shape, std::vector<size_t> lod) {
     int numel =
         std::accumulate(shape.begin(), shape.end(), 1, std::multiplies<int>());
     PaddleTensor tensor;
@@ -117,7 +117,7 @@ void SetInput(std::vector<std::vector<PaddleTensor>> *inputs,
             << " labels_beginning_offset: " << labels_beginning_offset
             << " bbox_beginning_offset:" << bbox_beginning_offset
             << " difficult_beginning_offset:" << difficult_beginning_offset
-            << endl;
+            << std::endl;
 
   TensorReader<float> image_reader(file, image_beginning_offset, "image");
   TensorReader<int64_t> label_reader(file, labels_beginning_offset, "gt_label");
