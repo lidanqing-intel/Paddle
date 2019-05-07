@@ -21,6 +21,7 @@ limitations under the License. */
 // no matching function for call to ‘std::vector<std::vector<long unsigned int>
 // >::push_back(std::vector<long int>
 
+// num_images | images | num_images lod | labels | bboxes | difficulties |
 namespace paddle {
 namespace inference {
 namespace analysis {
@@ -57,7 +58,7 @@ class TensorReader {
   TensorReader(std::ifstream &file, size_t beginning_offset, std::string name)
       : file_(file), position(beginning_offset), name_(name) {}
 
-  PaddleTensor NextBatch(std::vector<int> shape, std::vector<size_t> lod) {
+  PaddleTensor NextBatch(std::vector<int> shape, std::vector<size_t> &lod) {
     int numel =
         std::accumulate(shape.begin(), shape.end(), 1, std::multiplies<int>());
     PaddleTensor tensor;
@@ -98,16 +99,25 @@ void SetInput(std::vector<std::vector<PaddleTensor>> *inputs,
   size_t image_beginning_offset = static_cast<size_t>(file.tellg());
   auto lod_offset_in_file =
       image_beginning_offset + sizeof(float) * total_images * 3 * 300 * 300;
+  auto labels_beginning_offset =
+      lod_offset_in_file + sizeof(size_t) * total_images;
+
   std::vector<size_t> lod_full =
       ReadObjectsNum(file, lod_offset_in_file, total_images);
   size_t sum_objects_num =
       std::accumulate(lod_full.begin(), lod_full.end(), 0UL);
-  auto labels_beginning_offset =
-      lod_offset_in_file + sizeof(size_t) * total_images;
+
   auto bbox_beginning_offset =
       labels_beginning_offset + sizeof(int64_t) * sum_objects_num;
   auto difficult_beginning_offset =
       bbox_beginning_offset + sizeof(float) * sum_objects_num * 4;
+
+  std::cout << "image_beginning_offset: " << image_beginning_offset
+            << " lod_offset_in_file:" << lod_offset_in_file
+            << " labels_beginning_offset: " << labels_beginning_offset
+            << " bbox_beginning_offset:" << bbox_beginning_offset
+            << " difficult_beginning_offset:" << difficult_beginning_offset
+            << endl;
 
   TensorReader<float> image_reader(file, image_beginning_offset, "image");
   TensorReader<int64_t> label_reader(file, labels_beginning_offset, "gt_label");
@@ -132,6 +142,7 @@ void SetInput(std::vector<std::vector<PaddleTensor>> *inputs,
         {static_cast<int>(batch_num_objects), 4}, batch_lod);
     auto difficult_tensor = difficult_reader.NextBatch(
         {static_cast<int>(batch_num_objects), 1}, batch_lod);
+
     inputs->emplace_back(std::vector<PaddleTensor>{
         std::move(images_tensor), std::move(labels_tensor),
         std::move(bbox_tensor), std::move(difficult_tensor)});
@@ -156,9 +167,11 @@ std::shared_ptr<std::vector<PaddleTensor>> GetWarmupData(
 
   int batches = num_images / test_data_batch_size;
   int batch_remain = num_images % test_data_batch_size;
-  size_t num_objects = test_data[0][1].lod[0][test_data_batch_size];
-  std::vector<size_t> accum_lod(test_data[0][1].lod[0]);
-  accum_lod.resize(num_images);
+  size_t num_objects =
+      test_data[0][1].lod[0][test_data_batch_size];  // first batch, label
+  std::vector<size_t> accum_lod(
+      test_data[0][1].lod[0]);  // lod itself is a vector
+  accum_lod.resize(num_images + 1);
 
   for (int i = 1; i < batches; i++) {
     // change the vector contents
@@ -190,7 +203,7 @@ std::shared_ptr<std::vector<PaddleTensor>> GetWarmupData(
   difficult.name = "gt_difficult";
   difficult.shape = {static_cast<int>(num_objects), 4};
   difficult.dtype = PaddleDType::INT64;
-  difficult.data.Resize(sizeof(int64_t) * num_objects);
+  difficult.data.Resize(sizeof(int64_t) * num_objects);  // till here
 
   size_t objects_accum = 0;
   size_t objects_in_batch = 0;
@@ -226,6 +239,12 @@ std::shared_ptr<std::vector<PaddleTensor>> GetWarmupData(
   std::copy_n(static_cast<int64_t *>(test_data[batches][3].data.data()),
               objects_remain,
               static_cast<int64_t *>(difficult.data.data()) + objects_accum);
+
+  objects_accum = objects_accum + objects_remain;
+  PADDLE_ENFORCE(
+      static_cast<size_t>(num_objects) == static_cast<size_t>(objects_accum),
+      "The requested num of objects " + std::to_string(num_objects) +
+          " is the same as objects_accum.");
 
   auto warmup_data = std::make_shared<std::vector<PaddleTensor>>(4);
   (*warmup_data)[0] = std::move(images);
