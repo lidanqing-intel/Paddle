@@ -325,6 +325,7 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
     bool fuse_relu = ctx.Attr<bool>("fuse_relu");
     bool fuse_residual_conn = ctx.Attr<bool>("fuse_residual_connection");
     bool fuse_brelu = ctx.Attr<bool>("fuse_brelu");
+    float fuse_brelu_threshold = ctx.Attr<float>("fuse_brelu_threshold");
     bool force_fp32_output = ctx.Attr<bool>("force_fp32_output");
     bool unsigned_output = (fuse_relu || fuse_brelu);
     if (fuse_residual_conn) {
@@ -463,16 +464,14 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
 
         conv_pd = ConvFwdPrimitiveDesc(
             src_md, weights_md, bias_md, dst_md, strides, paddings,
-            mkldnn_engine, unsigned_output, fuse_residual_conn,
-            false /*fuse_brelu*/, 0.0 /*fuse_brelu_threshold*/,
-            output_shift_scale, sum_scale, is_test);
+            mkldnn_engine, fuse_relu, fuse_residual_conn, fuse_brelu,
+            fuse_brelu_threshold, output_shift_scale, sum_scale, is_test);
 
       } else {
-        conv_pd = ConvFwdPrimitiveDesc(src_md, weights_md, dst_md, strides,
-                                       paddings, mkldnn_engine, unsigned_output,
-                                       fuse_residual_conn, false /*fuse_brelu*/,
-                                       0.0 /*fuse_brelu_threshold*/,
-                                       output_shift_scale, sum_scale, is_test);
+        conv_pd = ConvFwdPrimitiveDesc(
+            src_md, weights_md, dst_md, strides, paddings, mkldnn_engine,
+            fuse_relu, fuse_residual_conn, fuse_brelu, fuse_brelu_threshold,
+            output_shift_scale, sum_scale, is_test);
       }
       // Save conv_pd/src_memory/weights_memory for backward pass
       dev_ctx.SetBlob(key_conv_pd, conv_pd);
