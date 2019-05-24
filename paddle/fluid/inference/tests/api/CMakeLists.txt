@@ -202,6 +202,12 @@ if(WITH_MKLDNN)
   endif()
   inference_analysis_api_int8_test(test_analyzer_int8_mobilenetv2 ${INT8_MOBILENETV2_MODEL_DIR} ${INT8_DATA_DIR} analyzer_int8_image_classification_tester.cc)
 
+  #googlenet int8
+  set(INT8_GOOGLENET_MODEL_DIR "${INT8_DATA_DIR}/googlenet")
+  if (NOT EXISTS ${INT8_GOOGLENET_MODEL_DIR})
+    inference_download_and_uncompress(${INT8_GOOGLENET_MODEL_DIR} "${INFERENCE_URL}/int8" "GoogleNet_int8_model.tar.gz" )
+  endif()
+  inference_analysis_api_int8_test(test_analyzer_int8_googlenet ${INT8_GOOGLENET_MODEL_DIR} ${INT8_DATA_DIR} analyzer_int8_image_classification_tester.cc SERIAL)
 endif()
 
 # bert, max_len=20, embedding_dim=128
