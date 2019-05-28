@@ -193,21 +193,19 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
     std::shared_ptr<mkldnn::convolution_forward::primitive_desc> conv_pd;
     auto fwd_prop_kind = is_test ? mkldnn::prop_kind::forward_inference
                                  : mkldnn::prop_kind::forward_training;
+
+    boost::optional<const mkldnn::memory::desc&> bias_md;
     if (bias) {
       bias_tz = paddle::framework::vectorize2int(bias->dims());
-      auto bias_md = platform::MKLDNNMemDesc(
+      bias_md = platform::MKLDNNMemDesc(
           bias_tz, platform::MKLDNNGetDataType<T>(), memory::format::x);
-      conv_pd = handler.AcquireConvolutionPrimitiveDescriptor(
-          src_md, weights_md, bias_md, dst_md, strides, paddings, mkldnn_engine,
-          fuse_relu, fuse_residual_conn, fuse_brelu, fuse_brelu_threshold,
-          fwd_prop_kind);
     } else {
-      conv_pd = handler.AcquireConvolutionPrimitiveDescriptor(
-          src_md, weights_md, boost::none, dst_md, strides, paddings,
-          mkldnn_engine, fuse_relu, fuse_residual_conn, fuse_brelu,
-          fuse_brelu_threshold, fwd_prop_kind);
+      bias_md = boost::none;
     }
-
+    conv_pd = handler.AcquireConvolutionPrimitiveDescriptor(
+        src_md, weights_md, bias_md, dst_md, strides, paddings, mkldnn_engine,
+        fuse_relu, fuse_residual_conn, fuse_brelu, fuse_brelu_threshold,
+        fwd_prop_kind);
     // create mkldnn memory from input tensors (data/weights)
     auto user_src_memory_p =
         handler.AcquireSrcMemory(user_src_md, to_void_cast<T>(input_data));
@@ -464,7 +462,6 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
         bias_tz = paddle::framework::vectorize2int(bias->dims());
         auto bias_md = platform::MKLDNNMemDesc(bias_tz, memory::data_type::s32,
                                                memory::format::x);
-
         conv_pd = ConvFwdPrimitiveDesc(
             src_md, weights_md, bias_md, dst_md, strides, paddings,
             mkldnn_engine, fuse_relu || fuse_brelu /*fuse_relu*/,
