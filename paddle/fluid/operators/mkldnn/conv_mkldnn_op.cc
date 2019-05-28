@@ -194,13 +194,12 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
     auto fwd_prop_kind = is_test ? mkldnn::prop_kind::forward_inference
                                  : mkldnn::prop_kind::forward_training;
 
-    boost::optional<const mkldnn::memory::desc&> bias_md;
     if (bias) {
       bias_tz = paddle::framework::vectorize2int(bias->dims());
-      bias_md = platform::MKLDNNMemDesc(
+      auto bias_md = platform::MKLDNNMemDesc(
           bias_tz, platform::MKLDNNGetDataType<T>(), memory::format::x);
     } else {
-      bias_md = boost::none;
+      auto bias_md = boost::none;
     }
     conv_pd = handler.AcquireConvolutionPrimitiveDescriptor(
         src_md, weights_md, bias_md, dst_md, strides, paddings, mkldnn_engine,
