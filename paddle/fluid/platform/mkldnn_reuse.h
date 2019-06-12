@@ -852,10 +852,10 @@ template <typename T>
 static void SetDstMemoryHandler(
     const framework::ExecutionContext& ctx, framework::Tensor* output,
     const std::shared_ptr<ConvMKLDNNHandler>& handler,
-    std::shared_ptr<mkldnn::memory>* dst_memory_p) {
+    std::shared_ptr<mkldnn::memory> dst_memory_p) {
   T* output_data =
       output->mutable_data<T>(ctx.GetPlace(), handler->GetDstMemorySize());
-  (*dst_memory_p)->set_data_handle(to_void_cast<T>(output_data));
+  dst_memory_p->set_data_handle(to_void_cast<T>(output_data));
 }
 
 }  // namespace platform

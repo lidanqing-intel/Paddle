@@ -596,23 +596,23 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
         output->ShareDataWith(*residual_param);
         if (residual_dt == mkldnn::memory::data_type::u8) {
           platform::SetDstMemoryHandler<uint8_t>(ctx, output, handler,
-                                                 &dst_memory_p);
+                                                 dst_memory_p);
         } else {
           need_s8_to_u8 = unsigned_output;
           platform::SetDstMemoryHandler<int8_t>(ctx, output, handler,
-                                                &dst_memory_p);
+                                                dst_memory_p);
         }
       } else if (!force_fp32_output) {
         if (unsigned_output) {
           platform::SetDstMemoryHandler<uint8_t>(ctx, output, handler,
-                                                 &dst_memory_p);
+                                                 dst_memory_p);
         } else {
           platform::SetDstMemoryHandler<int8_t>(ctx, output, handler,
-                                                &dst_memory_p);
+                                                dst_memory_p);
         }
       } else {
         platform::SetDstMemoryHandler<float>(ctx, output, handler,
-                                             &dst_memory_p);
+                                             dst_memory_p);
       }
 
       if (src_memory_reorder_p) {
