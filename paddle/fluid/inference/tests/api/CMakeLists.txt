@@ -5,22 +5,16 @@ if(WITH_GPU AND TENSORRT_FOUND)
 endif()
 
 function(download_data install_dir data_file)
-    if (NOT EXISTS ${install_dir})
-        inference_download_and_uncompress(${install_dir} ${INFERENCE_URL} ${data_file})
-    endif()
+    inference_download_and_uncompress(${install_dir} ${INFERENCE_URL} ${data_file})
 endfunction()
 
 function(download_int8_data install_dir data_file)
-    if (NOT EXISTS ${install_dir})
-        inference_download_and_uncompress(${install_dir} ${INFERENCE_URL}/int8 ${data_file})
-    endif()
+    inference_download_and_uncompress(${install_dir} ${INFERENCE_URL}/int8 ${data_file})
 endfunction()
 
 function(download_model_and_data install_dir model_name data_name)
-    if (NOT EXISTS ${install_dir})
-        inference_download_and_uncompress(${install_dir} ${INFERENCE_URL} ${model_name})
-        inference_download_and_uncompress(${install_dir} ${INFERENCE_URL} ${data_name})
-    endif()
+    inference_download_and_uncompress(${install_dir} ${INFERENCE_URL} ${model_name})
+    inference_download_and_uncompress(${install_dir} ${INFERENCE_URL} ${data_name})
 endfunction()
 
 function(inference_analysis_api_test target install_dir filename)
@@ -145,16 +139,12 @@ inference_analysis_test(test_analyzer_transformer SRCS analyzer_transformer_test
 
 # ocr
 set(OCR_INSTALL_DIR "${INFERENCE_DEMO_INSTALL_DIR}/ocr")
-if (NOT EXISTS ${OCR_INSTALL_DIR})
-    inference_download_and_uncompress(${OCR_INSTALL_DIR} "http://paddlemodels.bj.bcebos.com/" "inference-vis-demos%2Focr.tar.gz")
-endif()
+inference_download_and_uncompress(${OCR_INSTALL_DIR} "http://paddlemodels.bj.bcebos.com/" "inference-vis-demos%2Focr.tar.gz")
 inference_analysis_api_test_with_refer_result(test_analyzer_ocr ${OCR_INSTALL_DIR} analyzer_vis_tester.cc)
 
 # mobilenet with transpose op
 set(MOBILENET_INSTALL_DIR "${INFERENCE_DEMO_INSTALL_DIR}/mobilenet")
-if (NOT EXISTS ${MOBILENET_INSTALL_DIR})
     inference_download_and_uncompress(${MOBILENET_INSTALL_DIR} "http://paddlemodels.bj.bcebos.com/" "inference-vis-demos%2Fmobilenet.tar.gz")
-endif()
 inference_analysis_api_test_with_refer_result(test_analyzer_mobilenet_transpose ${MOBILENET_INSTALL_DIR} analyzer_vis_tester.cc)
 
 ### Image classification tests with fake data
@@ -279,9 +269,7 @@ endif()
 
 if(WITH_GPU AND TENSORRT_FOUND)
     set(TRT_MODEL_INSTALL_DIR "${INFERENCE_DEMO_INSTALL_DIR}/trt")
-    if (NOT EXISTS ${TRT_MODEL_INSTALL_DIR})
-        inference_download_and_uncompress(${TRT_MODEL_INSTALL_DIR} ${INFERENCE_URL}/tensorrt_test "trt_test_models.tar.gz")
-    endif()
+    inference_download_and_uncompress(${TRT_MODEL_INSTALL_DIR} ${INFERENCE_URL}/tensorrt_test "trt_test_models.tar.gz")
     inference_analysis_test(trt_mobilenet_test SRCS trt_mobilenet_test.cc
             EXTRA_DEPS ${INFERENCE_EXTRA_DEPS}
             ARGS --infer_model=${TRT_MODEL_INSTALL_DIR}/trt_test_models)
