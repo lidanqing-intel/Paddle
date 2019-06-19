@@ -563,9 +563,6 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
         conv_p = handler->AcquireConvolution(src_memory_p, weights_memory_p,
                                              dst_memory_p);
       }
-
-      // push primitive to stream and wait until it's executed
-      pipeline.push_back(*conv_p);
     } else {
       auto src_memory_reorder_p = std::static_pointer_cast<mkldnn::memory>(
           dev_ctx.GetBlob(src_reorder_key));
@@ -624,9 +621,8 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
       if (residual_reorder_p) {
         pipeline.push_back(*residual_reorder_p);
       }
-
-      pipeline.push_back(*conv_p);
     }
+    pipeline.push_back(*conv_p);
     // push primitive to stream and wait until it's executed
     stream(stream::kind::eager).submit(pipeline).wait();
 
