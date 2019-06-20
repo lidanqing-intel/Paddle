@@ -327,10 +327,10 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
     float fuse_brelu_threshold = ctx.Attr<float>("fuse_brelu_threshold");
     bool force_fp32_output = ctx.Attr<bool>("force_fp32_output");
     bool unsigned_output = fuse_relu || fuse_brelu;
-    if (fuse_residual_conn) {
-      PADDLE_ENFORCE(force_fp32_output != true,
-                     "residual fusion does not support force output with fp32");
-    }
+
+    PADDLE_ENFORCE(!fuse_residual_conn || !force_fp32_output,
+                   "residual fusion does not support force output with fp32");
+
     bool is_conv3d = strides.size() == 3U;
     // TODO(tpatejko): add support for dilation
     PADDLE_ENFORCE(
@@ -455,25 +455,33 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
       auto dst_md =
           platform::MKLDNNMemDesc(dst_tz, dst_dt, chosen_memory_format);
 
+      handler.reset(
+          new platform::ConvMKLDNNHandler(dev_ctx, mkldnn_engine, key));
+
       // create a conv primitive descriptor and save it for usage in backward
       // TODO(lidanqing): We use relu post-op instead of brelu post-op cause
       // mkldnn v0.18 does not support INT8 brelu post-op. Use code in /**/ when
       // v0.20 is enabled
-      std::shared_ptr<memory::desc> bias_md_p;
+      auto propagation = is_test ? mkldnn::prop_kind::forward_scoring
+                                 : mkldnn::prop_kind::forward_training;
+
       if (bias) {
         bias_tz = paddle::framework::vectorize2int(bias->dims());
-        bias_md_p = std::make_shared<memory::desc>(platform::MKLDNNMemDesc(
-            bias_tz, memory::data_type::s32, memory::format::x));
+        auto bias_md = platform::MKLDNNMemDesc(bias_tz, memory::data_type::s32,
+                                               mkldnn::memory::format::x);
+        conv_pd = handler->AcquireConvolutionPrimitiveDescriptor(
+            src_md, weights_md, bias_md, dst_md, strides, paddings,
+            mkldnn_engine, fuse_relu || fuse_brelu /*fuse_relu*/,
+            fuse_residual_conn, false /*fuse_brelu*/, fuse_brelu_threshold,
+            propagation, output_shift_scale, sum_scale);
+      } else {
+        conv_pd = handler->AcquireConvolutionPrimitiveDescriptor(
+            src_md, weights_md, boost::none, dst_md, strides, paddings,
+            mkldnn_engine, fuse_relu || fuse_brelu /*fuse_relu*/,
+            fuse_residual_conn, false /*fuse_brelu*/, fuse_brelu_threshold,
+            propagation, output_shift_scale, sum_scale);
       }
-      conv_pd = ConvFwdPrimitiveDesc(
-          src_md, weights_md, bias_md_p, dst_md, strides, paddings,
-          mkldnn_engine, fuse_relu || fuse_brelu /*fuse_relu*/,
-          fuse_residual_conn, false /*fuse_brelu*/, fuse_brelu_threshold,
-          output_shift_scale, sum_scale, is_test);
-      // Save conv_pd/src_memory/weights_memory for backward pass
-      dev_ctx.SetBlob(key_conv_pd, conv_pd);
-      handler.reset(new platform::ConvMKLDNNHandler(conv_pd, dev_ctx,
-                                                    mkldnn_engine, key));
+
       // create mkldnn memory from input tensors (data/weights)
       user_src_memory_p =
           handler->AcquireSrcMemory(user_src_md, to_void_cast<T>(input_data));
@@ -596,23 +604,23 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
         output->ShareDataWith(*residual_param);
         if (residual_dt == mkldnn::memory::data_type::u8) {
           platform::SetDstMemoryHandler<uint8_t>(ctx, output, handler,
-                                                 &dst_memory_p);
+                                                 dst_memory_p);
         } else {
           need_s8_to_u8 = unsigned_output;
           platform::SetDstMemoryHandler<int8_t>(ctx, output, handler,
-                                                &dst_memory_p);
+                                                dst_memory_p);
         }
       } else if (!force_fp32_output) {
         if (unsigned_output) {
           platform::SetDstMemoryHandler<uint8_t>(ctx, output, handler,
-                                                 &dst_memory_p);
+                                                 dst_memory_p);
         } else {
           platform::SetDstMemoryHandler<int8_t>(ctx, output, handler,
-                                                &dst_memory_p);
+                                                dst_memory_p);
         }
       } else {
         platform::SetDstMemoryHandler<float>(ctx, output, handler,
-                                             &dst_memory_p);
+                                             dst_memory_p);
       }
 
       if (src_memory_reorder_p) {
@@ -636,74 +644,6 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
 
     output->set_layout(DataLayout::kMKLDNN);
     output->set_format(GetMKLDNNFormat(*dst_memory_p));
-  }
-
- private:
-  mkldnn::primitive_attr CreatePostOps(
-      bool fuse_relu, bool fuse_residual_conn,
-      const std::vector<float>& output_shift_scale, float sum_scale,
-      bool fuse_brelu, float fuse_brelu_threshold) const {
-    mkldnn::primitive_attr conv_attr;
-    mkldnn::post_ops post_operations;
-    int mask = output_shift_scale.size() > 1 ? 1 << 1 : 0;
-    conv_attr.set_output_scales(mask, output_shift_scale);
-
-    if (fuse_residual_conn) {
-      post_operations.append_sum(sum_scale);
-    }
-    if (fuse_relu) {
-      constexpr float scale = 1.0f;
-      constexpr float negative_slope = 0.0f;
-      constexpr float placeholder = 1.0f;  // beta
-      post_operations.append_eltwise(scale, mkldnn::algorithm::eltwise_relu,
-                                     negative_slope, placeholder);
-    }
-    if (fuse_brelu) {
-      constexpr float scale = 1.0f;
-      constexpr float placeholder = 0.0f;  // beta
-      post_operations.append_eltwise(scale,
-                                     mkldnn::algorithm::eltwise_bounded_relu,
-                                     fuse_brelu_threshold, placeholder);
-    }
-    conv_attr.set_post_ops(post_operations);
-    return conv_attr;
-  }
-
-  std::unique_ptr<mkldnn::convolution_forward::primitive_desc>
-  ConvFwdPrimitiveDesc(const memory::desc& src, const memory::desc& weights,
-                       const std::shared_ptr<memory::desc> bias_md_p,
-                       const memory::desc& dst, const std::vector<int>& strides,
-                       const std::vector<int>& paddings,
-                       const mkldnn::engine& engine, const bool fuse_relu,
-                       const bool fuse_residual_conn, const bool fuse_brelu,
-                       const float fuse_brelu_threshold,
-                       const std::vector<float>& output_shift_scale,
-                       const float sum_scale, bool is_test) const {
-    memory::dims stride_dims = {strides[0], strides[1]};
-    memory::dims padding_dims = {paddings[0], paddings[1]};
-
-    auto propagation = is_test ? mkldnn::prop_kind::forward_scoring
-                               : mkldnn::prop_kind::forward_training;
-    auto conv_desc =
-        (bias_md_p != nullptr)
-            ? mkldnn::convolution_forward::desc(
-                  propagation, mkldnn::convolution_direct, src, weights,
-                  (*bias_md_p), dst, stride_dims, padding_dims, padding_dims,
-                  mkldnn::padding_kind::zero)
-            : mkldnn::convolution_forward::desc(
-                  propagation, mkldnn::convolution_direct, src, weights, dst,
-                  stride_dims, padding_dims, padding_dims,
-                  mkldnn::padding_kind::zero);
-
-    mkldnn::primitive_attr conv_attr =
-        CreatePostOps(fuse_relu, fuse_residual_conn, output_shift_scale,
-                      sum_scale, fuse_brelu, fuse_brelu_threshold);
-
-    auto p_conv_pd = new mkldnn::convolution_forward::primitive_desc(
-        conv_desc, conv_attr, engine);
-
-    return std::unique_ptr<mkldnn::convolution_forward::primitive_desc>(
-        p_conv_pd);
   }
 };
 
