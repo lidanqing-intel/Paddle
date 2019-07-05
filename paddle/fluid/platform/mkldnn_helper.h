@@ -15,11 +15,11 @@ limitations under the License. */
 
 #include <mkldnn.h>
 #include <algorithm>
+#include <memory>
 #include <string>
 #include <vector>
 #include "paddle/fluid/framework/operator.h"
 #include "paddle/fluid/platform/place.h"
-
 namespace paddle {
 namespace platform {
 
@@ -29,6 +29,7 @@ using MKLDNNMemory = mkldnn::memory;
 using MKLDNNMemoryDescriptor = mkldnn::memory::desc;
 using MKLDNNPrimitive = mkldnn::primitive;
 using MKLDNNPrimitiveDesc = mkldnn::handle<mkldnn_primitive_desc_t>;
+using MKLDNNDataType = mkldnn::memory::data_type;
 
 typedef std::unique_ptr<MKLDNNStream> MKLDNNStreamPtr;
 typedef std::unique_ptr<MKLDNNEngine> MKLDNNEnginePtr;
@@ -88,6 +89,38 @@ template <>
 inline mkldnn::memory::data_type MKLDNNGetDataType<float>() {
   return mkldnn::memory::f32;
 }
+template <>
+inline mkldnn::memory::data_type MKLDNNGetDataType<int32_t>() {
+  return mkldnn::memory::s32;
+}
+template <>
+inline mkldnn::memory::data_type MKLDNNGetDataType<int8_t>() {
+  return mkldnn::memory::s8;
+}
+template <>
+inline mkldnn::memory::data_type MKLDNNGetDataType<uint8_t>() {
+  return mkldnn::memory::u8;
+}
+
+// template <typename Type>
+// mkldnn::memory::data_type MKLDNNGetDataType() {
+//   return mkldnn::memory::data_undef;
+// }
+
+// template <>
+// inline mkldnn::memory::data_type MKLDNNGetDataType<float>() {
+//   return mkldnn::memory::f32;
+// }
+
+// template <>
+// inline mkldnn::memory::data_type MKLDNNGetDataType<int32_t>() {
+//   return mkldnn::memory::s32;
+// }
+
+// template <>
+// inline mkldnn::memory::data_type MKLDNNGetDataType<uint8_t>() {
+//   return mkldnn::memory::u8;
+// }
 
 inline void Reorder(const mkldnn::memory& src, const mkldnn::memory& dst) {
   auto reorder_prim = mkldnn::reorder(src, dst);
