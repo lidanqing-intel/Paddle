@@ -62,13 +62,13 @@ static std::vector<int> ComputeWeightsDims(const ExecutionContext& ctx,
   return weights_tz;
 }
 
-  static mkldnn::memory::format GetWeightsFormat(mkldnn::memory::format format,
-                                                int groups, bool is_conv3d) {
-    auto format_ =
-        (groups == 1) ? format : (is_conv3d ? mkldnn::memory::format::goidhw
-                                            : mkldnn::memory::format::goihw);
-    return format_;
-  }
+static mkldnn::memory::format GetWeightsFormat(mkldnn::memory::format format,
+                                              int groups, bool is_conv3d) {
+  auto format_ =
+      (groups == 1) ? format : (is_conv3d ? mkldnn::memory::format::goidhw
+                                          : mkldnn::memory::format::goihw);
+  return format_;
+}
 
 template <typename T_in, typename T_w, typename T_out>
 class ConvPrimitiveFactory {
@@ -85,9 +85,6 @@ class ConvPrimitiveFactory {
       UpdateDataPointers(ctx, output, input, residual_param);
       return *conv_prim_; // This is returned and all reorder are returned
     }
-
-    const T_in* input_data = input->data<T_in>();
-    const T_w* weights_data = weights->data<T_w>();
 
     /**
      * user weights_md and user_src_md
@@ -118,8 +115,12 @@ class ConvPrimitiveFactory {
         fuse_residual_conn, fuse_brelu, is_test, groups, weights_tz, is_int8);
  
     //Create raw input_ and weights_ memory, no reoder yet
-    input_ = CreateMemory(user_src_md, to_void_cast<T_in>(input_data));
-    weights_ = CreateMemory(user_weights_md, to_void_cast<T_w>(weights_data));
+    
+    // const T_in* input_data = input->data<T_in>();
+    // const T_w* weights_data = weights->data<T_w>();
+
+    input_ = CreateMemory(user_src_md, input->data<T_in>());
+    weights_ = CreateMemory(user_weights_md, weights->data<T_w>());//to_void_cast<T_w>(weights_data)
 
     /**weights_, bias_ are set during creation and will not be changed for reuse
      * input reorder, weights_reorder, bias_reorder
@@ -394,7 +395,7 @@ class ConvPrimitiveFactory {
                               ? 1.0f
                               : ctx.Attr<float>("Scale_out");
     auto scale_in_eltwise_data = ctx.Attr<float>("Scale_in_eltwise");
-    sum_scale = ctx.Attr<bool>("fuse_residual_connection")
+    auto sum_scale = ctx.Attr<bool>("fuse_residual_connection")
                           ? scale_out_data / scale_in_eltwise_data
                           : 1.0f;
     return sum_scale;
