@@ -92,7 +92,7 @@ class ConvPrimitiveFactory {
     auto weights_tz = ComputeWeightsDims(ctx, weights, groups, is_conv3d);
     auto weights_format = GetWeightsFormat(weights->format, groups, is_conv3d);
     auto user_weights_md = CreateMemDescriptor<T_w>(weights_tz, weights_format);
-    auto user_src_md = CreateMemDescriptor<T_in>(input);
+    auto user_src_md = CreateMemDescriptor<T_in>(input, input->format);
 
     /**
      * following weight_md and src_md and dst_md bias_md_p are only used for constructing conv_prim_desc. No other usages any more 
@@ -110,8 +110,7 @@ class ConvPrimitiveFactory {
       auto bias_md_p = std::make_shared<memory::desc>(
           platform::MKLDNNMemDesc(bias_tz, platform::MKLDNNGetDataType<T_w>(), memory::format::x));
     }
-    auto conv_prim_desc = CreateConvPrimDesc(
-        src_md, weights_md, bias_md_p, dst_md, strides, paddings, fuse_relu,
+    auto conv_prim_desc = CreateConvPrimDesc(ctx, src_md, weights_md, bias_md_p, dst_md, strides, paddings, fuse_relu,
         fuse_residual_conn, fuse_brelu, is_test, groups, weights_tz, is_int8);
  
     //Create raw input_ and weights_ memory, no reoder yet
@@ -125,13 +124,17 @@ class ConvPrimitiveFactory {
     /**weights_, bias_ are set during creation and will not be changed for reuse
      * input reorder, weights_reorder, bias_reorder
      */
+
+    // const memory& user_src_memory, const memory& user_weights_memory,
+    //   const mkldnn::convolution_forward::primitive_desc& conv_prim_desc,
+    //   const Tensor* bias, const Tensor* residual_param, const Tensor* output,
+    //   const ExecutionContext& ctx, const int groups, std::vector<int>& weights_tz, bool is_int8
+
     conv_prim_ =
         CreateConvPrimitive(*input_, *weights_, conv_prim_desc, bias,
                             residual_param, output, ctx, groups, weights_tz, is_int8);
     return *conv_prim_;
   }
-
-
 
   mkldnn::memory CreateUserResidualMemory(const Tensor* residual_param) {
     auto residual_data_tz = GetTensorDims(residual_param);
@@ -248,14 +251,20 @@ class ConvPrimitiveFactory {
                                    format);
   }
 
-  template <typename T>
-  static mkldnn::memory::desc CreateMemDescriptor(Tensor* tensor) {
-    auto dims = GetTensorDims(tensor);
-    auto format = tensor->format();
-    return platform::MKLDNNMemDesc(dims, platform::MKLDNNGetDataType<T>(),
-                                   format);
-  }
+  // template <typename T>
+  // static mkldnn::memory::desc CreateMemDescriptor(Tensor* tensor) {
+  //   auto dims = GetTensorDims(tensor);
+  //   auto format = tensor->format();
+  //   return platform::MKLDNNMemDesc(dims, platform::MKLDNNGetDataType<T>(),
+  //                                  format);
+  // }
 
+  template <typename T>
+  static mkldnn::memory::desc CreateMemDescriptor(const Tensor* tensor,
+                                                  memory::format format) {
+    auto dims = framework::vectorize2int(tensor->dims());
+    return CreateMemDescriptor<T>(dims, format);
+  }
   //What role the Create play. creat memory and when update only use pointer. Put reorder and scale into the queue
 
  private:
@@ -272,7 +281,6 @@ class ConvPrimitiveFactory {
       }
     }
   }
-
 
   inline mkldnn::memory::format GetChosenFormat(const ExecutionContext& ctx, size_t src_tz_size,
                                                 int groups, bool is_conv3d) {
@@ -487,6 +495,9 @@ class ConvPrimitiveFactory {
     attributes.set_post_ops(post_operations);
     return attributes;
   }
+
+        // ctx, src_md, weights_md, bias_md_p, dst_md, strides, paddings, fuse_relu,
+        // fuse_residual_conn, fuse_brelu, is_test, groups, weights_tz, is_int8
 
   mkldnn::convolution_forward::primitive_desc CreateConvPrimDesc(
       const ExecutionContext& ctx, const mkldnn::memory::desc& input_desc,
