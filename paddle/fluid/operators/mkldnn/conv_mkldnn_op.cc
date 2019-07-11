@@ -20,6 +20,7 @@ limitations under the License. */
 #include "paddle/fluid/platform/mkldnn_helper.h"
 #include "paddle/fluid/platform/variant.h"
 #include "paddle/fluid/framework/data_layout_transform.h"
+#include "boost/optional.hpp"
 
 namespace paddle {
 namespace operators {
@@ -62,11 +63,11 @@ static std::vector<int> ComputeWeightsDims(const ExecutionContext& ctx,
   return weights_tz;
 }
 
-static mkldnn::memory::format GetWeightsFormat(mkldnn::memory::format format,
+static memory::format GetWeightsFormat(memory::format format,
                                               int groups, bool is_conv3d) {
   auto format_ =
-      (groups == 1) ? format : (is_conv3d ? mkldnn::memory::format::goidhw
-                                          : mkldnn::memory::format::goihw);
+      (groups == 1) ? format : (is_conv3d ? memory::format::goidhw
+                                          : memory::format::goihw);
   return format_;
 }
 
@@ -79,7 +80,7 @@ class ConvPrimitiveFactory {
       const LoDTensor* input, const Tensor* weights,
       const Tensor* bias, const std::vector<int>& strides,
       const std::vector<int>& paddings, const int groups, bool is_conv3d, bool fuse_relu,
-      bool fuse_brelu, bool fuse_residual_conn, const Tensor* residual_param,
+      bool fuse_brelu, const float fuse_brelu_threshold, bool fuse_residual_conn, const Tensor* residual_param,
       LoDTensor* output, bool is_test, const ExecutionContext& ctx, bool is_int8) {
     if (conv_prim_) {
       UpdateDataPointers(ctx, output, input, residual_param);
@@ -90,33 +91,28 @@ class ConvPrimitiveFactory {
      * user weights_md and user_src_md
     */ 
     auto weights_tz = ComputeWeightsDims(ctx, weights, groups, is_conv3d);
-    auto weights_format = GetWeightsFormat(weights->format, groups, is_conv3d);
+    auto weights_format = GetWeightsFormat(weights->format(), groups, is_conv3d);
     auto user_weights_md = CreateMemDescriptor<T_w>(weights_tz, weights_format);
-    auto user_src_md = CreateMemDescriptor<T_in>(input, input->format);
+    auto user_src_md = CreateMemDescriptor<T_in>(input, input->format());
 
     /**
      * following weight_md and src_md and dst_md bias_md_p are only used for constructing conv_prim_desc. No other usages any more 
      */
-    auto weights_format_any = mkldnn::memory::format::any;
+    auto weights_format_any = memory::format::any;
     auto src_tz = GetTensorDims(input);
     auto chosen_memory_format = GetChosenFormat(ctx, src_tz.size(), groups, is_conv3d);
     auto src_md = CreateMemDescriptor<T_in>(src_tz, chosen_memory_format);
     auto weights_md = CreateMemDescriptor<T_w>(weights_tz, weights_format_any);
     std::vector<int> dst_tz = GetTensorDims(output);
     auto dst_md = CreateMemDescriptor<T_out>(dst_tz, chosen_memory_format);
-    std::shared_ptr<memory::desc> bias_md_p;
+    std::shared_ptr<mkldnn::memory::desc> bias_md_p;
     if (bias) {
       auto bias_tz = paddle::framework::vectorize2int(bias->dims());
-      auto bias_md_p = std::make_shared<memory::desc>(
+      auto bias_md_p = std::make_shared<mkldnn::memory::desc>(
           platform::MKLDNNMemDesc(bias_tz, platform::MKLDNNGetDataType<T_w>(), memory::format::x));
     }
     auto conv_prim_desc = CreateConvPrimDesc(ctx, src_md, weights_md, bias_md_p, dst_md, strides, paddings, fuse_relu,
-        fuse_residual_conn, fuse_brelu, is_test, groups, weights_tz, is_int8);
- 
-    //Create raw input_ and weights_ memory, no reoder yet
-    
-    // const T_in* input_data = input->data<T_in>();
-    // const T_w* weights_data = weights->data<T_w>();
+        fuse_residual_conn, fuse_brelu, fuse_brelu_threshold, is_test, groups, weights_tz, is_int8);
 
     input_ = CreateMemory(user_src_md, input->data<T_in>());
     weights_ = CreateMemory(user_weights_md, weights->data<T_w>());//to_void_cast<T_w>(weights_data)
@@ -144,123 +140,53 @@ class ConvPrimitiveFactory {
     auto user_residual_md = platform::MKLDNNMemDesc(
         residual_data_tz, residual_data_type, residual_param->format());
     auto user_residual_memory_p =
-        CreateMemory(user_residual_md, to_void_cast<T_in>(residual_param_data));
+        CreateMemory(user_residual_md, residual_param_data);
     return user_residual_memory_p;
   }
 
-  mkldnn::memory Reorder(const memory& src_mem, const memory& dst_mem) {
-    auto reorder = mkldnn::reorder(src_mem, dst_mem);
-    stream(stream::kind::eager).submit({reorder}).wait();
-    return dst_mem;
-  }
-
-  mkldnn::memory Reorder(const memory::desc& src_desc,
-                         const memory::desc& dst_desc, const void* src_data) {
-    auto src_mem = memory({src_desc, engine_}, const_cast<void*>(src_data));
-    auto dst_mem = memory({dst_desc, engine_});
-    auto reorder = mkldnn::reorder(src_mem, dst_mem);
-    stream(stream::kind::eager).submit({reorder}).wait();
-    return dst_mem;
-  }
-
-  // // quantize
-  // mkldnn::memory Reorder(const memory& src_mem,
-  //                        const memory::primitive_desc& dst_pd,
-  //                        const std::vector<float>& scale_data) {
-  //   mkldnn::memory dst_mem = mkldnn::memory(dst_pd);  // TODO(lidanqing) waiting
-  //                                                     // for review.
-  //   mkldnn::primitive_attr attributes;
-  //   int mask = CreateMask(0, scale_data.size() > 1);
-  //   attributes.set_output_scales(mask, scale_data);
-  //   auto reorder =
-  //       mkldnn::reorder(mkldnn::reorder::primitive_desc(
-  //                           src_mem.get_primitive_desc(), dst_pd, attributes),
-  //                       src_mem, dst_mem);
+  // mkldnn::memory Reorder(const mkldnn::memory::primitive_desc& src_desc,
+  //                        const mkldnn::memory::primitive_desc& dst_desc, const void* src_data) {
+  //   auto src_mem = memory({src_desc, engine_}, const_cast<void*>(src_data));
+  //   auto dst_mem = memory({dst_desc, engine_});
+  //   auto reorder = mkldnn::reorder(src_mem, dst_mem);
   //   stream(stream::kind::eager).submit({reorder}).wait();
   //   return dst_mem;
   // }
 
-  // quantize 
-  mkldnn::memory QuantizeReorderMemory(const memory::primitive_desc& dst_mem_pd, const memory& src_mem, const std::vector<float>& scale_data, int mask){
-
-    mkldnn::memory dst_mem = mkldnn::memory(dst_mem_pd);  // Yes here is correct because dst_mem_pd is memory::primitive_desc, not memory::desc
-    mkldnn::primitive_attr attri;  // attribute for int8 weights and bias data reorder.
-    attri.set_output_scales(mask, scale_data);
-    auto reorder =
-        mkldnn::reorder(mkldnn::reorder::primitive_desc(
-                            src_mem.get_primitive_desc(), dst_mem_pd, attri),
-                        src_mem, dst_mem);
-    stream(stream::kind::eager).submit({reorder}).wait();
-    return dst_mem;
-  }
-
-/**
- *   std::shared_ptr<mkldnn::memory> AcquireMemory(
-      mkldnn::memory::primitive_desc& mpd,       // NOLINT
-      mkldnn::memory::primitive_desc& user_mpd,  // NOLINT
-      const std::shared_ptr<mkldnn::memory> user_memory_p,
-      const std::string& suffix,
-      std::vector<mkldnn::primitive>& pipeline,  // NOLINT
-      bool is_persistent = false, bool is_INT8 = false,
-      std::vector<float> scale_data = {1.0f}, int mask = 0) {
+  mkldnn::memory AcquireMemory(
+      const mkldnn::memory::primitive_desc& mpd,       // NOLINT
+      const mkldnn::memory::primitive_desc& user_mpd,  // NOLINT
+      const mkldnn::memory& user_memory,
+      std::vector<float> scale_data = {1.0f}, int mask = 0, bool is_INT8 = false) {
     // create reorder primitive if the input format is not the preferred one
-    auto local_key = key_ + suffix;
-    auto key_reorder_p = key_ + suffix + "reorder_p";
-
-    auto target_memory_p =
-        std::static_pointer_cast<mkldnn::memory>(dev_ctx_.GetBlob(local_key));
-    if (target_memory_p == nullptr) {
-      target_memory_p = user_memory_p;
-      std::shared_ptr<mkldnn::primitive> reorder_p;
-      if (mpd != user_mpd) {
-        target_memory_p = std::make_shared<mkldnn::memory>(mpd);
-        std::shared_ptr<mkldnn::reorder> reorder_p;
-        if (is_INT8) {
-          mkldnn::primitive_attr
-              attri;  // attribute for int8 weights and bias data reorder.
-          attri.set_output_scales(mask, scale_data);
-
-          auto reorder_pd = std::shared_ptr<mkldnn::reorder::primitive_desc>(
-              new mkldnn::reorder::primitive_desc(user_mpd, mpd, attri));
-          reorder_p = std::shared_ptr<mkldnn::reorder>(new mkldnn::reorder(
-              *reorder_pd, *user_memory_p, *target_memory_p));
-        } else {
-          reorder_p = std::make_shared<mkldnn::reorder>(*user_memory_p,
-                                                        *target_memory_p);
-        }
-        dev_ctx_.SetBlob(key_reorder_p, reorder_p);
-        pipeline.push_back(*reorder_p);
+    mkldnn::memory dst_mem = mkldnn::memory(mpd);
+    std::shared_ptr<mkldnn::primitive> reorder_p;
+    if (mpd != user_mpd) {
+      std::shared_ptr<mkldnn::reorder> reorder_p;
+      if (is_INT8) {
+        mkldnn::primitive_attr
+            attri;  // attribute for int8 weights and bias data reorder.
+        attri.set_output_scales(mask, scale_data);
+        auto reorder_pd = mkldnn::reorder::primitive_desc(user_mpd, mpd, attri);
+        reorder_p = std::shared_ptr<mkldnn::reorder>(new mkldnn::reorder(
+            reorder_pd, user_memory, dst_mem));
+      } else {
+        reorder_p = std::make_shared<mkldnn::reorder>(user_memory, dst_mem);
       }
-      dev_ctx_.SetBlob(local_key, target_memory_p);
-    } else if (!is_persistent) {
-      // Make reorder if needed
-      auto reorder_p = std::static_pointer_cast<mkldnn::reorder>(
-          dev_ctx_.GetBlob(key_reorder_p));
-      if (reorder_p != nullptr) {
-        pipeline.push_back(*reorder_p);
-      }
+      stream(stream::kind::eager).submit({*reorder_p}).wait();
     }
-    return target_memory_p;
-  }
- */
+    return dst_mem;
+    }
 
   template <typename T>
-  static mkldnn::memory::desc CreateMemDescriptor(const std::vector<int>& dims,
+  mkldnn::memory::desc CreateMemDescriptor(const std::vector<int>& dims,
                                                   memory::format format) {
     return platform::MKLDNNMemDesc(dims, platform::MKLDNNGetDataType<T>(),
                                    format);
   }
 
-  // template <typename T>
-  // static mkldnn::memory::desc CreateMemDescriptor(Tensor* tensor) {
-  //   auto dims = GetTensorDims(tensor);
-  //   auto format = tensor->format();
-  //   return platform::MKLDNNMemDesc(dims, platform::MKLDNNGetDataType<T>(),
-  //                                  format);
-  // }
-
   template <typename T>
-  static mkldnn::memory::desc CreateMemDescriptor(const Tensor* tensor,
+  mkldnn::memory::desc CreateMemDescriptor(const Tensor* tensor,
                                                   memory::format format) {
     auto dims = framework::vectorize2int(tensor->dims());
     return CreateMemDescriptor<T>(dims, format);
@@ -268,27 +194,27 @@ class ConvPrimitiveFactory {
   //What role the Create play. creat memory and when update only use pointer. Put reorder and scale into the queue
 
  private:
-  void UpdateDataPointers(const ExecutionContext& ctx, Tensor* out,
+  void UpdateDataPointers(const ExecutionContext& ctx, const Tensor* out,
                           const Tensor* in, const Tensor* residual_param) {
-    input_->set_data_handle(const_cast<T_in*>(in->data<T_in>()));
-    if (residual_param) { // TODO residual may really need to create new memory. Otherwise, the output_ actually has changed type, output_ after created is reordered
-      output_->set_data_handle(const_cast<T_out*>(residual_param->data<T_out>())); // what if the format is not correct? It seems reoder is needed. TODO(lidanqing) so the residual format must be included too
-    } else {
-      output_->set_data_handle(out->mutable_data<T_out>(ctx.GetPlace()));
-      if (out->format() == memory::format::format_undef) {
-        auto output_format = output_->get_primitive_desc().desc().data.format;
-        out->set_format((memory::format)output_format);
-      }
-    }
+    // input_->set_data_handle(const_cast<T_in*>(in->data<T_in>()));
+    // if (residual_param) { // TODO residual may really need to create new memory. Otherwise, the output_ actually has changed type, output_ after created is reordered
+    //   output_->set_data_handle(const_cast<T_out*>(residual_param->data<T_out>())); // what if the format is not correct? It seems reoder is needed. TODO(lidanqing) so the residual format must be included too
+    // } else {
+    //   output_->set_data_handle(out->mutable_data<T_out>(ctx.GetPlace()));
+    //   if (out->format() == memory::format::format_undef) {
+    //     auto output_format = output_->get_primitive_desc().desc().data.format;
+    //     out->set_format((memory::format)output_format);
+    //   }
+    // }
   }
 
-  inline mkldnn::memory::format GetChosenFormat(const ExecutionContext& ctx, size_t src_tz_size,
+  inline memory::format GetChosenFormat(const ExecutionContext& ctx, size_t src_tz_size,
                                                 int groups, bool is_conv3d) {
     std::string data_format = ctx.Attr<std::string>("data_format");
     auto chosen_memory_format =
         platform::data_format_to_memory_format(data_format);
 
-    if (chosen_memory_format != mkldnn::memory::format::any && is_conv3d) {
+    if (chosen_memory_format != memory::format::any && is_conv3d) {
       chosen_memory_format =
           platform::MKLDNNFormatForSize(src_tz_size, chosen_memory_format);
     }
@@ -298,7 +224,7 @@ class ConvPrimitiveFactory {
   template <typename T>
   mkldnn::memory CreateMemory(const mkldnn::memory::desc& desc,
                               const Tensor* tensor) {
-    return CreateMemory(desc, tensor->data<T>());
+    return CreateMemory(desc, tensor->data<T>()); //input->data<T_in>()
   }
 
   mkldnn::memory CreateMemory(const mkldnn::memory::desc& desc,
@@ -329,42 +255,35 @@ class ConvPrimitiveFactory {
     return scale_bias_data;
   }
 
-  //TODO I dont quantize residual data. Only put residual_data into the output and the postop appendsum will solve this
-  // template <typename T>
-  // void QuantizeResidual(const ExecutionContext& ctx) {
-  //   auto quantized_desc = output_->get_primitive_desc().desc();
-  //   quantized_desc.data.data_type =
-  //       (mkldnn_data_type_t)platform::MKLDNNGetDataType<T>();
-  //   output_ = Reorder(*output_, {quantized_desc, engine_},
-  //                     ctx.Attr<std::vector<float>>("Scale_in_eltwise"));
-  // }
-
   mkldnn::memory QuantizeBias(
       const convolution_forward::primitive_desc& conv_prim_desc,
-      const ExecutionContext& ctx, const int groups, std::vector<int>& weights_tz) {
-    auto bias_scales = ComputeBiasScales(ctx, groups, weights_tz);
-    auto scale_weights_data = ctx.Attr<std::vector<float>>("Scale_weights");
-    bool is_multi_channel = scale_weights_data.size() > 1;
-    int mask_reorder = is_multi_channel ? 1 << 0 : 1; // 0000 0010 : 0000 0001
-    bias_ = QuantizeReorderMemory(conv_prim_desc.bias_primitive_desc(), *bias_, bias_scales, mask_reorder);
+      const ExecutionContext& ctx, const int groups, std::vector<int>& weights_tz, bool is_int8) {
+        if(is_int8){
+          auto bias_scales = ComputeBiasScales(ctx, groups, weights_tz);
+          auto scale_weights_data = ctx.Attr<std::vector<float>>("Scale_weights");
+          bool is_multi_channel = scale_weights_data.size() > 1;
+          int mask_reorder = is_multi_channel ? 1 << 0 : 1; // 0000 0010 : 0000 0001
+          bias_ = AcquireMemory(conv_prim_desc.bias_primitive_desc(), *bias_, bias_scales, mask_reorder, is_int8);
+        }
     return bias_;
   }
 
   //checked
-  template <typename T>
-  void QuantizeWeights(const convolution_forward::primitive_desc& conv_prim_desc, const ExecutionContext& ctx, const int groups) {
+  void ReorderQuantizeWeights(const convolution_forward::primitive_desc& conv_prim_desc, const ExecutionContext& ctx, const int groups, bool is_int8) {
     // TODO I feel here should be conv_pd_, but Michal's version is as follow: auto dst_quantized_desc = weights_->get_primitive_desc().desc();
-    auto scale_weights_data = ctx.Attr<std::vector<float>>("Scale_weights");
-    bool is_multi_channel = scale_weights_data.size() > 1;
-    int mask_reorder =
-          is_multi_channel ? ((groups != 1) ? (1 << 1) + (1 << 0) : 1 << 0) : 0;  // 0000 0011: 0000 0001 : 0000 0000
-     
-    // TODO do I need to set the dst type first
-    // quantized_desc.data.data_type =
-    //     (mkldnn_data_type_t)platform::MKLDNNGetDataType<T>();
-    
-    // TODO return value is weights_ or *weights_。 Here above it is not reorder it is actually quantize
-    weights_ = QuantizeReorderMemory(conv_prim_desc.weights_primitive_desc(), *weights_, scale_weights_data, mask_reorder);
+    if(is_int8){
+      auto scale_weights_data = ctx.Attr<std::vector<float>>("Scale_weights");
+      bool is_multi_channel = scale_weights_data.size() > 1;
+      int mask_reorder =
+            is_multi_channel ? ((groups != 1) ? (1 << 1) + (1 << 0) : 1 << 0) : 0;  // 0000 0011: 0000 0001 : 0000 0000
+      
+      // TODO return value is weights_ or *weights_。 Here above it is not reorder it is actually quantize
+      weights_ = AcquireMemory(conv_prim_desc.weights_primitive_desc(), *weights_, scale_weights_data, mask_reorder, is_int8);
+    }
+    else{
+      weights_ = AcquireMemory(conv_prim_desc.weights_primitive_desc(), *weights_);
+    }
+    return weights_;
   }
 
   std::vector<float> ComputeOutputShiftScale(const ExecutionContext& ctx, const int groups, std::vector<int>& weights_tz) {
@@ -409,47 +328,7 @@ class ConvPrimitiveFactory {
     return sum_scale;
   }
 
-  //   mkldnn::primitive_attr CreatePostOps(
-  //     bool fuse_relu, bool fuse_residual_conn, bool fuse_brelu,
-  //     float fuse_brelu_threshold,
-  //     const std::vector<float> output_shift_scale = {},
-  //     float sum_scale = 1.0f) const {
-  //   mkldnn::primitive_attr conv_attr;
-  //   mkldnn::post_ops post_operations;
-  //   if (output_shift_scale.size() > 0) {
-  //     int mask = output_shift_scale.size() > 1 ? 1 << 1 : 0;
-  //     conv_attr.set_output_scales(mask, output_shift_scale);
-  //   }
-  //   // Fusion with Elementwise layer relies on adding a sum post-operation with
-  //   // the scale parameter. It is assumed that when fuse_residual_connection is
-  //   // true, the output tensor contains the data coming from residual
-  //   // connection. The result of this post_op is:
-  //   // Output = scale * Output + Conv_Out.
-  //   if (fuse_residual_conn) {
-  //     post_operations.append_sum(sum_scale);
-  //   }
-  //   // Fusion with ReLU layer is executed through the PostOps feature. Create a
-  //   // PostOps object and configure it to execute an eltwise relu operation.
-  //   if (fuse_relu) {
-  //     constexpr float scale = 1.0f;
-  //     constexpr float negative_slope = 0.0f;
-  //     constexpr float placeholder = 0.0f;
-  //     post_operations.append_eltwise(scale, mkldnn::algorithm::eltwise_relu,
-  //                                    negative_slope, placeholder);
-  //   }
-
-  //   if (fuse_brelu) {
-  //     constexpr float scale = 1.0f;
-  //     constexpr float placeholder = 0.0f;
-  //     post_operations.append_eltwise(scale,
-  //                                    mkldnn::algorithm::eltwise_bounded_relu,
-  //                                    fuse_brelu_threshold, placeholder);
-  //   }
-  //   conv_attr.set_post_ops(post_operations);
-  //   return conv_attr;
-  // }
-
-  mkldnn::primitive_attr CreatePostOps(const ExecutionContext& ctx, const int groups, std::vector<int>& weights_tz, bool is_int8) {
+  mkldnn::primitive_attr CreatePostOps(const ExecutionContext& ctx, const int groups, std::vector<int>& weights_tz, bool is_int8, bool fuse_relu, bool fuse_brelu, float fuse_brelu_threshold, bool fuse_residual_conn) {
     mkldnn::primitive_attr attributes;
     mkldnn::post_ops post_operations;
     /**
@@ -458,25 +337,27 @@ class ConvPrimitiveFactory {
     }*/
     // int mask = CreateMask(1, output_shift_scale.size() > 1); // 0000 0010: 0000 0000
     // attributes.set_output_scales(mask, output_shift_scale);
-    auto output_shift_scale = ComputeOutputShiftScale(ctx, groups, weights_tz);
-    if (output_shift_scale.size() > 0) {
+    std::vector<float> output_shif_scale;
+    float sum_scale = 1.0f;
+    if (is_int8){
+      auto output_shift_scale = ComputeOutputShiftScale(ctx, groups, weights_tz);
+      sum_scale = ComputeInt8SumScale(ctx);
       int mask = output_shift_scale.size() > 1 ? 1 << 1 : 0; // 0000 0010: 0000 0000
       attributes.set_output_scales(mask, output_shift_scale);
     }
-
+    
     // Fusion with Elementwise layer relies on adding a sum post-operation with
     // the scale parameter. It is assumed that when fuse_residual_connection is
     // true, the output tensor contains the data coming from residual
     // connection. The result of this post_op is:
     // Output = scale * Output + Conv_Out.
-    if (ctx.Attr<bool>("fuse_residual_conn")) {
-      auto sum_scale = is_int8 ?  ComputeInt8SumScale(ctx) : 1.0f;
+    if (fuse_residual_conn) {
       post_operations.append_sum(sum_scale); 
     }
 
     // Fusion with ReLU layer is executed through the PostOps feature. Create a
     // PostOps object and configure it to execute an eltwise relu operation.
-    if (ctx.Attr<bool>("fuse_relu")) {
+    if (fuse_relu) {
       constexpr float scale = 1.0f;
       constexpr float negative_slope = 0.0f;
       constexpr float placeholder = 1.0f;  // beta
@@ -484,8 +365,7 @@ class ConvPrimitiveFactory {
                                      negative_slope, placeholder);
     }
 
-    if (ctx.Attr<bool>("fuse_brelu")) {
-      float fuse_brelu_threshold = ctx.Attr<float>("fuse_brelu_threshold");
+    if (fuse_brelu) {
       constexpr float scale = 1.0f;
       constexpr float placeholder = 0.0f;
       post_operations.append_eltwise(scale,
@@ -496,35 +376,32 @@ class ConvPrimitiveFactory {
     return attributes;
   }
 
-        // ctx, src_md, weights_md, bias_md_p, dst_md, strides, paddings, fuse_relu,
-        // fuse_residual_conn, fuse_brelu, is_test, groups, weights_tz, is_int8
-
   mkldnn::convolution_forward::primitive_desc CreateConvPrimDesc(
       const ExecutionContext& ctx, const mkldnn::memory::desc& input_desc,
       const mkldnn::memory::desc& weights_desc,
-      boost::optional<const mkldnn::memory::desc&> bias_desc,
+      const std::shared_ptr<mkldnn::memory::desc> bias_md_p,
       const mkldnn::memory::desc& dst_desc, const std::vector<int>& strides,
       const std::vector<int>& paddings, const bool fuse_relu,
-      const bool fuse_residual_conn, const bool fuse_brelu,
+      const bool fuse_residual_conn, const bool fuse_brelu, const float fuse_brelu_threshold,
       const bool is_test, const int groups, std::vector<int>& weights_tz, bool is_int8) {
-    const auto attrs = CreatePostOps(ctx, groups, weights_tz, is_int8);
+    const auto attrs = CreatePostOps(ctx, groups, weights_tz, is_int8, fuse_relu, fuse_brelu, fuse_brelu_threshold, fuse_residual_conn);
     static std::mutex acquire_barrier;
     std::lock_guard<std::mutex> block_threads_until_finish_this_job(
         acquire_barrier);
 
     auto fwd_prop_kind = is_test ? mkldnn::prop_kind::forward_inference
                                  : mkldnn::prop_kind::forward_training;
-    mkldnn::memory::dims stride_dims = strides;
-    mkldnn::memory::dims padding_dims = paddings;
+    mkldnn::memory::dims stride_dims = {strides[0], strides[1]};
+    mkldnn::memory::dims padding_dims =  {paddings[0], paddings[1]};
     auto conv_desc =
-        (bias_desc != nullptr)
-            ? convolution_forward::desc(
+        (bias_md_p != nullptr)
+            ? mkldnn::convolution_forward::desc(
                   fwd_prop_kind, mkldnn::algorithm::convolution_direct,
-                  input_desc, weights_desc, *bias_desc, dst_desc, stride_dims,
-                  padding_dims, mkldnn::padding_kind::zero)
-            : convolution_forward::desc(
+                  input_desc, weights_desc, (*bias_md_p), dst_desc, stride_dims,
+                  padding_dims, padding_dims, mkldnn::padding_kind::zero)
+            : mkldnn::convolution_forward::desc(
                   fwd_prop_kind, mkldnn::algorithm::convolution_direct,
-                  input_desc, weights_desc, dst_desc, stride_dims, padding_dims,
+                  input_desc, weights_desc, dst_desc, stride_dims, padding_dims, padding_dims,
                   mkldnn::padding_kind::zero);
     auto conv_prim_desc =
         convolution_forward::primitive_desc(conv_desc, attrs, engine_);
@@ -540,27 +417,27 @@ class ConvPrimitiveFactory {
     input_ = Reorder(user_src_memory.get_primitive_desc(),
                      conv_prim_desc.src_primitive_desc(), user_src_memory);
     // TODO(lidanqing) Should weights reorder from the begining before quantization? It seems for INT8 it is not. According to liaoli's code, it is like this
-    if (!is_int8){
-      weights_ = Reorder(user_weights_memory.get_primitive_desc(),  conv_prim_desc.weights_primitive_desc(), user_weights_memory);
-    }
-    else{
-      QuantizeWeights(conv_prim_desc, ctx, groups);
-    }
-    
+    // if (!is_int8){
+    //   weights_ = Reorder(user_weights_memory.get_primitive_desc(),  conv_prim_desc.weights_primitive_desc(), user_weights_memory);
+    // }
+    // else{
+    //   ReorderQuantizeWeights(conv_prim_desc, ctx, groups, is_int8);
+    // }
+    weights_ = ReorderQuantizeWeights(conv_prim_desc, ctx, groups, is_int8);
     CreateDstMemory(conv_prim_desc, ctx, residual_param, output);
     // until here original untill 544
 
     if (bias) {
-      auto bias_desc = CreateMemDescriptor<T_w>(bias);
-      bias_ = CreateMemory<T_w>(bias_desc, bias);
-      if(is_int8){
-        bias_ = QuantizeBias(conv_prim_desc, ctx, groups, weights_tz);
-      }
-      return convolution_forward(conv_prim_desc, input_, weights_,
-                                 bias_, output_);
+      auto bias_desc = CreateMemDescriptor<T_w>(bias, bias->format());
+      bias_ = CreateMemory(bias_desc, bias->data<T_w>());
+      
+      bias_ = QuantizeBias(conv_prim_desc, ctx, groups, weights_tz, is_int8);
+      
+      return convolution_forward(conv_prim_desc, *input_, *weights_,
+                                 *bias_, *output_);
     } else {
-      return convolution_forward(conv_prim_desc, input_, weights_,
-                                 output_);
+      return convolution_forward(conv_prim_desc, *input_, *weights_,
+                                 *output_);
     }
     // push primitive to stream and wait until it's executed
     //  pipeline.push_back(*conv_p);
@@ -573,7 +450,7 @@ class ConvPrimitiveFactory {
   // INT8 is applied, sum_scale is executed too.
   mkldnn::memory CreateDstMemory(
       const mkldnn::convolution_forward::primitive_desc& conv_prim_desc,
-      const ExecutionContext& ctx, Tensor* residual_param, const Tensor* out) {
+      const ExecutionContext& ctx, const Tensor* residual_param, const Tensor* out) {
     auto fetched_dst_format =
         conv_prim_desc.dst_primitive_desc().desc().data.format;
     auto fetched_dst_memory_size =
@@ -586,8 +463,8 @@ class ConvPrimitiveFactory {
         auto residual_data_tz = GetTensorDims(residual_param);
         auto user_residual_md = platform::MKLDNNMemDesc(
                residual_data_tz, residual_dt, residual_param->format());
-        output_ = Reorder( //TODO in liaoli's code this part looks does not need to do reorder. But there is pipe, so strange
-            conv_prim_desc.dst_primitive_desc(), output_);
+        // output_ = Reorder( //TODO in liaoli's code this part looks does not need to do reorder. But there is pipe, so strange
+        //     conv_prim_desc.dst_primitive_desc(), output_);
       }
     } else{  // create memory
       auto output_data =
@@ -643,7 +520,7 @@ static MKLDNNDataType getDstType(bool is_int8, bool force_fp32_output, bool fuse
 }
 static std::string GetHash(const mkldnn::memory::dims& input_dims,  // NOLINT
                            const mkldnn::memory::data_type src_dt,
-                           const mkldnn::memory::format& format,
+                           const memory::format& format,
                            const mkldnn::memory::dims& weights_dims,  // NOLINT
                            const bool& fuse_relu,                     // NOLINT
                            const bool& fuse_brelu,                    // NOLINT
@@ -744,32 +621,32 @@ class ConvMKLDNNOpKernel : public framework::OpKernel<T_in> {
 
     auto dst_typename = getDstType(is_int8, force_fp32_output, fuse_relu, fuse_brelu, fuse_residual_conn, residual_param);
  
-    //std::shared_ptr<mkldnn::convolution_forward> conv_p;
+    std::shared_ptr<mkldnn::convolution_forward> conv_p;
     if (dst_typename == MKLDNNDataType::f32){
-      auto conv = GetConvPrimitiveFactory<T_in, T_w, float>(dev_ctx, key,
+      conv_p = std::make_shared<mkldnn::convolution_forward>(GetConvPrimitiveFactory<T_in, T_w, float>(dev_ctx, key,
                                                     mkldnn_engine)
             ->AcquireConvPrimitive(input, weights, bias, strides, paddings,
-                                  groups, is_conv3d, fuse_relu, fuse_brelu,
-                                  fuse_residual_conn, residual_param, output, is_test, ctx, is_int8);
-      stream(stream::kind::eager).submit({conv}).wait();
+                                  groups, is_conv3d, fuse_relu, fuse_brelu, fuse_brelu_threshold,
+                                  fuse_residual_conn, residual_param, output, is_test, ctx, is_int8));
+      // stream(stream::kind::eager).submit({conv}).wait();
     }
     else if (dst_typename == MKLDNNDataType::u8){
-      auto conv = GetConvPrimitiveFactory<T_in, T_w, uint8_t>(dev_ctx, key,
+      conv_p = std::make_shared<mkldnn::convolution_forward>(GetConvPrimitiveFactory<T_in, T_w, uint8_t>(dev_ctx, key,
                                                     mkldnn_engine)
             ->AcquireConvPrimitive(input, weights, bias, strides, paddings,
-                                  groups, is_conv3d, fuse_relu, fuse_brelu,
-                                  fuse_residual_conn, residual_param, output, is_test, ctx, is_int8);
-      stream(stream::kind::eager).submit({conv}).wait();
+                                  groups, is_conv3d, fuse_relu, fuse_brelu, fuse_brelu_threshold,
+                                  fuse_residual_conn, residual_param, output, is_test, ctx, is_int8));
+      // stream(stream::kind::eager).submit({conv}).wait();
     }
     else if(dst_typename == MKLDNNDataType::s8){
-      auto conv = GetConvPrimitiveFactory<T_in, T_w, int8_t>(dev_ctx, key,
+      conv_p = std::make_shared<mkldnn::convolution_forward>(GetConvPrimitiveFactory<T_in, T_w, int8_t>(dev_ctx, key,
                                                     mkldnn_engine)
             ->AcquireConvPrimitive(input, weights, bias, strides, paddings,
-                                  groups, is_conv3d, fuse_relu, fuse_brelu,
-                                  fuse_residual_conn, residual_param, output, is_test, ctx, is_int8);
-      stream(stream::kind::eager).submit({conv}).wait();
+                                  groups, is_conv3d, fuse_relu, fuse_brelu, fuse_brelu_threshold,
+                                  fuse_residual_conn, residual_param, output, is_test, ctx, is_int8));
+      // stream(stream::kind::eager).submit({conv}).wait();
     }
-    // stream(stream::kind::eager).submit({conv}).wait();
+    stream(stream::kind::eager).submit({*conv_p}).wait();
     output->set_layout(DataLayout::kMKLDNN);
   }
 };
