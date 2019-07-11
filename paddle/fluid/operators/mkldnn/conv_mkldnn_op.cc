@@ -159,9 +159,10 @@ class ConvPrimitiveFactory {
       const mkldnn::memory& user_memory,
       std::vector<float> scale_data = {1.0f}, int mask = 0, bool is_INT8 = false) {
     // create reorder primitive if the input format is not the preferred one
-    mkldnn::memory dst_mem = mkldnn::memory(mpd);
+    
     std::shared_ptr<mkldnn::primitive> reorder_p;
     if (mpd != user_mpd) {
+      mkldnn::memory dst_mem = mkldnn::memory(mpd);
       std::shared_ptr<mkldnn::reorder> reorder_p;
       if (is_INT8) {
         mkldnn::primitive_attr
@@ -174,6 +175,9 @@ class ConvPrimitiveFactory {
         reorder_p = std::make_shared<mkldnn::reorder>(user_memory, dst_mem);
       }
       stream(stream::kind::eager).submit({*reorder_p}).wait();
+    }
+    else{
+      return user_memory;
     }
     return dst_mem;
     }
@@ -255,7 +259,7 @@ class ConvPrimitiveFactory {
     return scale_bias_data;
   }
 
-  mkldnn::memory QuantizeBias(
+  void QuantizeBias(
       const convolution_forward::primitive_desc& conv_prim_desc,
       const ExecutionContext& ctx, const int groups, std::vector<int>& weights_tz, bool is_int8) {
         if(is_int8){
@@ -263,9 +267,9 @@ class ConvPrimitiveFactory {
           auto scale_weights_data = ctx.Attr<std::vector<float>>("Scale_weights");
           bool is_multi_channel = scale_weights_data.size() > 1;
           int mask_reorder = is_multi_channel ? 1 << 0 : 1; // 0000 0010 : 0000 0001
-          bias_ = AcquireMemory(conv_prim_desc.bias_primitive_desc(), *bias_, bias_scales, mask_reorder, is_int8);
+          bias_ = AcquireMemory(conv_prim_desc.bias_primitive_desc(), bias_->get_primitive_desc(), *bias_, bias_scales, mask_reorder, is_int8);
         }
-    return bias_;
+    // return bias_;
   }
 
   //checked
@@ -278,12 +282,11 @@ class ConvPrimitiveFactory {
             is_multi_channel ? ((groups != 1) ? (1 << 1) + (1 << 0) : 1 << 0) : 0;  // 0000 0011: 0000 0001 : 0000 0000
       
       // TODO return value is weights_ or *weights_。 Here above it is not reorder it is actually quantize
-      weights_ = AcquireMemory(conv_prim_desc.weights_primitive_desc(), *weights_, scale_weights_data, mask_reorder, is_int8);
+      weights_ = AcquireMemory(conv_prim_desc.weights_primitive_desc(), weights_->get_primitive_desc(), *weights_, scale_weights_data, mask_reorder, is_int8);
     }
     else{
-      weights_ = AcquireMemory(conv_prim_desc.weights_primitive_desc(), *weights_);
+      weights_ = AcquireMemory(conv_prim_desc.weights_primitive_desc(), weights_->get_primitive_desc(), *weights_);
     }
-    return weights_;
   }
 
   std::vector<float> ComputeOutputShiftScale(const ExecutionContext& ctx, const int groups, std::vector<int>& weights_tz) {
@@ -331,10 +334,7 @@ class ConvPrimitiveFactory {
   mkldnn::primitive_attr CreatePostOps(const ExecutionContext& ctx, const int groups, std::vector<int>& weights_tz, bool is_int8, bool fuse_relu, bool fuse_brelu, float fuse_brelu_threshold, bool fuse_residual_conn) {
     mkldnn::primitive_attr attributes;
     mkldnn::post_ops post_operations;
-    /**
-     *   int CreateMask(int slice_dimension, bool is_multi_channel_quantizied) {
-    return is_multi_channel_quantizied ? 1 << slice_dimension : 0;
-    }*/
+
     // int mask = CreateMask(1, output_shift_scale.size() > 1); // 0000 0010: 0000 0000
     // attributes.set_output_scales(mask, output_shift_scale);
     std::vector<float> output_shif_scale;
@@ -414,8 +414,7 @@ class ConvPrimitiveFactory {
       const Tensor* bias, const Tensor* residual_param, const Tensor* output,
       const ExecutionContext& ctx, const int groups, std::vector<int>& weights_tz, bool is_int8) {
     // all reorders should be put here because the conv_prim returned here will be put into the submit, and all others follow this
-    input_ = Reorder(user_src_memory.get_primitive_desc(),
-                     conv_prim_desc.src_primitive_desc(), user_src_memory);
+    input_ = AcquireMemory(conv_prim_desc.src_primitive_desc(), user_src_memory.get_primitive_desc(), user_src_memory);
     // TODO(lidanqing) Should weights reorder from the begining before quantization? It seems for INT8 it is not. According to liaoli's code, it is like this
     // if (!is_int8){
     //   weights_ = Reorder(user_weights_memory.get_primitive_desc(),  conv_prim_desc.weights_primitive_desc(), user_weights_memory);
@@ -423,7 +422,7 @@ class ConvPrimitiveFactory {
     // else{
     //   ReorderQuantizeWeights(conv_prim_desc, ctx, groups, is_int8);
     // }
-    weights_ = ReorderQuantizeWeights(conv_prim_desc, ctx, groups, is_int8);
+    ReorderQuantizeWeights(conv_prim_desc, ctx, groups, is_int8);
     CreateDstMemory(conv_prim_desc, ctx, residual_param, output);
     // until here original untill 544
 
@@ -431,7 +430,7 @@ class ConvPrimitiveFactory {
       auto bias_desc = CreateMemDescriptor<T_w>(bias, bias->format());
       bias_ = CreateMemory(bias_desc, bias->data<T_w>());
       
-      bias_ = QuantizeBias(conv_prim_desc, ctx, groups, weights_tz, is_int8);
+      QuantizeBias(conv_prim_desc, ctx, groups, weights_tz, is_int8);
       
       return convolution_forward(conv_prim_desc, *input_, *weights_,
                                  *bias_, *output_);
