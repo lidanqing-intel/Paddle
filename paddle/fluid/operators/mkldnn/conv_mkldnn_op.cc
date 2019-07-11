@@ -175,12 +175,12 @@ class ConvPrimitiveFactory {
         reorder_p = std::make_shared<mkldnn::reorder>(user_memory, dst_mem);
       }
       stream(stream::kind::eager).submit({*reorder_p}).wait();
+      return dst_mem;
     }
     else{
       return user_memory;
     }
-    return dst_mem;
-    }
+  }
 
   template <typename T>
   mkldnn::memory::desc CreateMemDescriptor(const std::vector<int>& dims,
