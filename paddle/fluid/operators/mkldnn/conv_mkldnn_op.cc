@@ -190,10 +190,10 @@ class ConvPrimitiveFactory {
     if (residual_param) { // TODO residual may really need to create new memory. Otherwise, the output_ actually has changed type, output_ after created is reordered
       residual_->set_data_handle(const_cast<T_out*>(residual_param->data<T_out>())); // what if the format is not correct? It seems reoder is needed. TODO(lidanqing) so the residual format must be included too
     } else {
-      output_->set_data_handle(out->mutable_data<T_out>(ctx.GetPlace())); // Note: The most important is here  set handle to this.
-      if (out->format() == memory::format::format_undef) {
+      output_->set_data_handle(out->mutable_data<T_out>(ctx.GetPlace()));
+      if (out->format() == mkldnn::memory::format::format_undef) {
         auto output_format = output_->get_primitive_desc().desc().data.format;
-        out->set_format((memory::format)output_format);
+        out->set_format((mkldnn::memory::format)output_format);
       }
     }
   }
@@ -446,24 +446,23 @@ class ConvPrimitiveFactory {
       auto residual_data_tz = GetTensorDims(residual_param);
       auto user_residual_md = platform::MKLDNNMemDesc(residual_data_tz, residual_dt, residual_param->format());
       auto residual_data = residual_param->data<T_out>();
-      residual_ = CreateMemory(user_residual_md, residual_data); //Note: If the residual_param exists and valid. The T_out is exactly the residual_param->type()
+      residual_ = CreateMemory(user_residual_md, to_void_cast<T_out>(residual_data); //Note: If the residual_param exists and valid. The T_out is exactly the residual_param->type()
       if (residual_param->format() != fetched_dst_format) { //TODO residual format should be in the key too, it is concerend that if it will need one more reorder
-        auto src_mem = memory({user_residual_md, engine_}, const_cast<void*>(residual_data));
-        T_out* output_data = output->mutable_data<T>(ctx.GetPlace());
-        output_ = std::make_shared<mkldnn::memory>(conv_prim_desc.dst_primitive_desc(), to_void_cast<T>(output_data);
+        auto src_mem = memory({user_residual_md, engine_}, to_void_cast<T_out>(residual_data));
+        T_out* output_data = output->mutable_data<T_out>(ctx.GetPlace());
+        output_ = CreateMemory(conv_prim_desc.dst_primitive_desc(), to_void_cast<T_out>(output_data));
         Reorder(src_mem, output_);
       }
       else{
-        // output_ = residual_; // I should use shared memory not boost::optional
         output->ShareDataWith(*residual_param);
         auto output_data = output->mutable_data<T>(ctx.GetPlace());
-        output_ = std::make_shared<mkldnn::memory>(conv_prim_desc.dst_primitive_desc(), output_data);
+        output_ = CreateMemory(conv_prim_desc.dst_primitive_desc(), to_void_cast<T_out>(output_data));
       }
     } else{ 
       auto output_data =
           out->mutable_data<T_out>(ctx.GetPlace(), fetched_dst_memory_size);
       auto output_ = std::make_shared<mkldnn::memory>(
-          conv_prim_desc.dst_primitive_desc(), output_data);
+          conv_prim_desc.dst_primitive_desc(), to_void_cast<T_out>(output_data);
     }
     return output_;
   }
