@@ -117,31 +117,10 @@ class ConvPrimitiveFactory {
     input_ = CreateMemory(user_src_md, input->data<T_in>());
     weights_ = CreateMemory(user_weights_md, weights->data<T_w>());//to_void_cast<T_w>(weights_data)
 
-    /**weights_, bias_ are set during creation and will not be changed for reuse
-     * input reorder, weights_reorder, bias_reorder
-     */
-
-    // const memory& user_src_memory, const memory& user_weights_memory,
-    //   const mkldnn::convolution_forward::primitive_desc& conv_prim_desc,
-    //   const Tensor* bias, const Tensor* residual_param, const Tensor* output,
-    //   const ExecutionContext& ctx, const int groups, std::vector<int>& weights_tz, bool is_int8
-
     conv_prim_ =
         CreateConvPrimitive(*input_, *weights_, conv_prim_desc, bias,
                             residual_param, output, ctx, groups, weights_tz, is_int8);
     return *conv_prim_;
-  }
-
-  mkldnn::memory CreateUserResidualMemory(const Tensor* residual_param) {
-    auto residual_data_tz = GetTensorDims(residual_param);
-    auto residual_data_type =
-        paddle::framework::ToMKLDNNDataType(residual_param->type());
-    auto residual_param_data = residual_param->data<T_out>();
-    auto user_residual_md = platform::MKLDNNMemDesc(
-        residual_data_tz, residual_data_type, residual_param->format());
-    auto user_residual_memory_p =
-        CreateMemory(user_residual_md, residual_param_data);
-    return user_residual_memory_p;
   }
 
   // mkldnn::memory Reorder(const mkldnn::memory::primitive_desc& src_desc,
@@ -152,6 +131,13 @@ class ConvPrimitiveFactory {
   //   stream(stream::kind::eager).submit({reorder}).wait();
   //   return dst_mem;
   // }
+
+    mkldnn::memory Reorder(const mkldnn::memory& src_mem,
+                         const mkldnn::memory& dst_mem) {
+    auto reorder = mkldnn::reorder(src_mem, dst_mem);
+    stream(stream::kind::eager).submit({reorder}).wait();
+    return dst_mem;
+  }
 
   mkldnn::memory AcquireMemory(
       const mkldnn::memory::primitive_desc& mpd,       // NOLINT
@@ -200,16 +186,16 @@ class ConvPrimitiveFactory {
  private:
   void UpdateDataPointers(const ExecutionContext& ctx, const Tensor* out,
                           const Tensor* in, const Tensor* residual_param) {
-    // input_->set_data_handle(const_cast<T_in*>(in->data<T_in>()));
-    // if (residual_param) { // TODO residual may really need to create new memory. Otherwise, the output_ actually has changed type, output_ after created is reordered
-    //   output_->set_data_handle(const_cast<T_out*>(residual_param->data<T_out>())); // what if the format is not correct? It seems reoder is needed. TODO(lidanqing) so the residual format must be included too
-    // } else {
-    //   output_->set_data_handle(out->mutable_data<T_out>(ctx.GetPlace()));
-    //   if (out->format() == memory::format::format_undef) {
-    //     auto output_format = output_->get_primitive_desc().desc().data.format;
-    //     out->set_format((memory::format)output_format);
-    //   }
-    // }
+    input_->set_data_handle(const_cast<T_in*>(in->data<T_in>()));
+    if (residual_param) { // TODO residual may really need to create new memory. Otherwise, the output_ actually has changed type, output_ after created is reordered
+      residual_->set_data_handle(const_cast<T_out*>(residual_param->data<T_out>())); // what if the format is not correct? It seems reoder is needed. TODO(lidanqing) so the residual format must be included too
+    } else {
+      output_->set_data_handle(out->mutable_data<T_out>(ctx.GetPlace())); // Note: The most important is here  set handle to this.
+      if (out->format() == memory::format::format_undef) {
+        auto output_format = output_->get_primitive_desc().desc().data.format;
+        out->set_format((memory::format)output_format);
+      }
+    }
   }
 
   inline memory::format GetChosenFormat(const ExecutionContext& ctx, size_t src_tz_size,
@@ -447,7 +433,7 @@ class ConvPrimitiveFactory {
   // if residual_param exists, set pointer of residual_data memory as output_.
   // If output->dst format != residua format, reorder will be executed. If
   // INT8 is applied, sum_scale is executed too.
-  mkldnn::memory CreateDstMemory(
+  std::shared_ptr<mkldnn::memory> CreateDstMemory(
       const mkldnn::convolution_forward::primitive_desc& conv_prim_desc,
       const ExecutionContext& ctx, const Tensor* residual_param, const Tensor* out) {
     auto fetched_dst_format =
@@ -456,16 +442,24 @@ class ConvPrimitiveFactory {
         conv_prim_desc.dst_primitive_desc().get_size();
 
     if (residual_param) {
-      output_ = CreateUserResidualMemory(residual_param);
-      if (residual_param->format() != fetched_dst_format) {
-        auto residual_dt = platform::MKLDNNGetDataType<T_out>();
-        auto residual_data_tz = GetTensorDims(residual_param);
-        auto user_residual_md = platform::MKLDNNMemDesc(
-               residual_data_tz, residual_dt, residual_param->format());
-        // output_ = Reorder( //TODO in liaoli's code this part looks does not need to do reorder. But there is pipe, so strange
-        //     conv_prim_desc.dst_primitive_desc(), output_);
+      auto residual_dt = paddle::framework::ToMKLDNNDataType(residual_param->type());
+      auto residual_data_tz = GetTensorDims(residual_param);
+      auto user_residual_md = platform::MKLDNNMemDesc(residual_data_tz, residual_dt, residual_param->format());
+      auto residual_data = residual_param->data<T_out>();
+      residual_ = CreateMemory(user_residual_md, residual_data); //Note: If the residual_param exists and valid. The T_out is exactly the residual_param->type()
+      if (residual_param->format() != fetched_dst_format) { //TODO residual format should be in the key too, it is concerend that if it will need one more reorder
+        auto src_mem = memory({user_residual_md, engine_}, const_cast<void*>(residual_data));
+        T_out* output_data = output->mutable_data<T>(ctx.GetPlace());
+        output_ = std::make_shared<mkldnn::memory>(conv_prim_desc.dst_primitive_desc(), to_void_cast<T>(output_data);
+        Reorder(src_mem, output_);
       }
-    } else{  // create memory
+      else{
+        // output_ = residual_; // I should use shared memory not boost::optional
+        output->ShareDataWith(*residual_param);
+        auto output_data = output->mutable_data<T>(ctx.GetPlace());
+        output_ = std::make_shared<mkldnn::memory>(conv_prim_desc.dst_primitive_desc(), output_data);
+      }
+    } else{ 
       auto output_data =
           out->mutable_data<T_out>(ctx.GetPlace(), fetched_dst_memory_size);
       auto output_ = std::make_shared<mkldnn::memory>(
@@ -478,8 +472,9 @@ class ConvPrimitiveFactory {
   const mkldnn::engine& engine_;
   boost::optional<memory> bias_;
   boost::optional<memory> input_;
-  boost::optional<memory> output_;
+  std::shared_ptr<mkldnn::memory> output_;
   boost::optional<memory> weights_;
+  boost::optional<memory> residual_;
   boost::optional<mkldnn::convolution_forward> conv_prim_;
 };
 
