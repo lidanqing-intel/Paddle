@@ -467,39 +467,6 @@ class ConvPrimitiveFactory {
     }
     return output_;
   }
-/**
- *   } else {
-      auto reorder_p =
-          std::make_shared<mkldnn::reorder>(*user_memory_p, *target_memory_p);
-      dev_ctx_.SetBlob(key_reorder_p, reorder_p);
-      pipeline.push_back(*reorder_p);
-    }
-
-    return target_memory_p;
-  }
- * 
- */
-
-
-  // This incarnation of AcquireMemory can call user function eg. custom reorder
-  // or preprocessing routine if needed
-  std::shared_ptr<mkldnn::memory> AcquireMemory(
-      const mkldnn::memory::desc& md, void* ptr, const std::string& suffix,
-      user_function custom_func = {}) {
-    /*Generate key*/
-    auto local_key = key_ + suffix;
-    auto mem_p =
-        std::static_pointer_cast<mkldnn::memory>(dev_ctx_.GetBlob(local_key));
-    if (mem_p == nullptr) {
-      
-      mem_p = std::make_shared<mkldnn::memory>(
-          mkldnn::memory::primitive_desc{md, engine_}, ptr);
-      dev_ctx_.SetBlob(local_key, mem_p);
-    } else {
-      mem_p->set_data_handle(ptr);
-    }
-    return mem_p;
-  }
 
  private:
   const mkldnn::engine& engine_;
