@@ -77,15 +77,6 @@ class ConvPrimitiveFactory {
   explicit ConvPrimitiveFactory(const mkldnn::engine& engine)
       : engine_(engine) {}
 
- private:
-  const mkldnn::engine& engine_;
-  boost::optional<memory> bias_;
-  boost::optional<memory> input_;
-  std::shared_ptr<mkldnn::memory> output_;
-  boost::optional<memory> weights_;
-  boost::optional<memory> residual_;
-  boost::optional<mkldnn::convolution_forward> conv_prim_;
-
   convolution_forward AcquireConvPrimitive(
       const LoDTensor* input, const Tensor* weights, const Tensor* bias,
       const std::vector<int>& strides, const std::vector<int>& paddings,
@@ -138,10 +129,14 @@ class ConvPrimitiveFactory {
     return *conv_prim_;
   }
 
-  mkldnn::memory Reorder(const mkldnn::memory& src_mem,
-                         const mkldnn::memory& dst_mem) {
+  mkldnn::memory Reorder(const memory::desc& src_desc,
+                         const memory::desc& dst_desc, const void* src_data) {
+    auto src_mem = memory({src_desc, engine_}, const_cast<void*>(src_data));
+    auto dst_mem = memory({dst_desc, engine_});
+
     auto reorder = mkldnn::reorder(src_mem, dst_mem);
     stream(stream::kind::eager).submit({reorder}).wait();
+
     return dst_mem;
   }
 
@@ -244,7 +239,7 @@ class ConvPrimitiveFactory {
     std::vector<float> scale_bias_data(count);
 
 #pragma omp parallel for if (count > 1)
-    for (size_t i = 0; i < count; i++) {
+    for (int i = 0; i < count; i++) {
       if (scale_weights_data[i] == 0.0)
         scale_bias_data[i] = 1.0f;
       else
@@ -306,7 +301,7 @@ class ConvPrimitiveFactory {
     std::vector<float> output_shift_scale(count);
 
 #pragma omp parallel for
-    for (size_t i = 0; i < count; i++) {
+    for (int i = 0; i < count; i++) {
       if (scale_weights_data[i] == 0.0) {
         output_shift_scale[i] = scale_out_data;
       } else {
@@ -420,7 +415,7 @@ class ConvPrimitiveFactory {
   convolution_forward CreateConvPrimitive(
       const memory& user_src_memory, const memory& user_weights_memory,
       const mkldnn::convolution_forward::primitive_desc& conv_prim_desc,
-      const Tensor* bias, const Tensor* residual_param, const Tensor* output,
+      const Tensor* bias, const Tensor* residual_param, Tensor* output,
       const ExecutionContext& ctx, const int groups,
       const std::vector<int>& weights_tz, bool is_int8) {
     // all reorders should be put here because the conv_prim returned here will
@@ -443,10 +438,9 @@ class ConvPrimitiveFactory {
     }
   }
 
-  std::shared_ptr<mkldnn::memory> CreateDstMemory(
+  void CreateDstMemory(
       const mkldnn::convolution_forward::primitive_desc& conv_prim_desc,
-      const ExecutionContext& ctx, const Tensor* residual_param,
-      const Tensor* out) {
+      const ExecutionContext& ctx, const Tensor* residual_param, Tensor* out) {
     auto fetched_dst_format =
         conv_prim_desc.dst_primitive_desc().desc().data.format;
     auto fetched_dst_memory_size =
@@ -468,33 +462,31 @@ class ConvPrimitiveFactory {
       if (residual_param->format() !=
           fetched_dst_format) {  // TODO(lidanqing) residual format should be
                                  // in the key
-                                 // too, it is concerend that if it will need
-                                 // one more reorder
-        auto src_mem = memory({user_residual_md, engine_},
-                              to_void_cast<T_out>(residual_data));
-        T_out* output_data = out->mutable_data<T_out>(ctx.GetPlace());
-        output_ = std::make_shared<mkldnn::memory>(
-            conv_prim_desc.dst_primitive_desc(),
-            to_void_cast<T_out>(output_data));
-        Reorder(src_mem, output_);
+        output_ = Reorder(user_residual_md,
+                          conv_prim_desc.dst_primitive_desc().desc(),
+                          to_void_cast<T_out>(residual_data));
       } else {
-        auto residual_param = ctx.Input<Tensor>(
-            "ResidualData");  // TODO(lidanqing) this line will be deleted
         out->ShareDataWith(*residual_param);
         auto output_data = out->mutable_data<T_out>(ctx.GetPlace());
-        output_ = std::make_shared<mkldnn::memory>(
-            conv_prim_desc.dst_primitive_desc(),
-            to_void_cast<T_out>(output_data));
+        output_ = mkldnn::memory(conv_prim_desc.dst_primitive_desc(),
+                                 to_void_cast<T_out>(output_data));
       }
     } else {
       auto output_data =
           out->mutable_data<T_out>(ctx.GetPlace(), fetched_dst_memory_size);
-      auto output_ =
-          std::make_shared<mkldnn::memory>(conv_prim_desc.dst_primitive_desc(),
-                                           to_void_cast<T_out>(output_data));
+      auto output_ = mkldnn::memory(conv_prim_desc.dst_primitive_desc(),
+                                    to_void_cast<T_out>(output_data));
     }
-    return output_;
   }
+
+ private:
+  const mkldnn::engine& engine_;
+  boost::optional<memory> bias_;
+  boost::optional<memory> input_;
+  boost::optional<memory> output_;
+  boost::optional<memory> weights_;
+  boost::optional<memory> residual_;
+  boost::optional<mkldnn::convolution_forward> conv_prim_;
 };
 
 template <typename T_in, typename T_w, typename T_out>
