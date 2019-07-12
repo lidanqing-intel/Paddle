@@ -43,15 +43,10 @@ using mkldnn::prop_kind;
 // #ifdef PADDLE_WITH_MKLDNN
 using MKLDNNDataType = mkldnn::memory::data_type;
 
-static std::vector<int> GetTensorDims(const Tensor* tensor) {
-  auto dims = framework::vectorize2int(tensor->dims());
-  return dims;
-}
-
 static std::vector<int> ComputeWeightsDims(const ExecutionContext& ctx,
                                            const Tensor* weights, int groups,
                                            bool is_conv3d) {
-  std::vector<int> weights_tz = GetTensorDims(weights);
+  std::vector<int> weights_tz = framework::vectorize2int(weights->dims());
   int g = std::max(groups, 1);
   if (g > 1) {
     // convert [out_n, in_n, c, h, w] to [g, out_n/g, in_n, c, h, w]
@@ -99,12 +94,12 @@ class ConvPrimitiveFactory {
     // following weight_md and src_md and dst_md bias_md_p are only used for
     // constructing conv_prim_desc. No other usages any more
     auto weights_format_any = memory::format::any;
-    auto src_tz = GetTensorDims(input);
+    auto src_tz = framework::vectorize2int(input->dims());
     auto chosen_memory_format =
         GetChosenFormat(ctx, src_tz.size(), groups, is_conv3d);
     auto src_md = CreateMemDescriptor<T_in>(src_tz, chosen_memory_format);
     auto weights_md = CreateMemDescriptor<T_w>(weights_tz, weights_format_any);
-    std::vector<int> dst_tz = GetTensorDims(output);
+    auto dst_tz = framework::vectorize2int(output->dims());
     auto dst_md = CreateMemDescriptor<T_out>(dst_tz, chosen_memory_format);
     std::shared_ptr<mkldnn::memory::desc> bias_md_p;
     if (bias) {
@@ -261,7 +256,6 @@ class ConvPrimitiveFactory {
                             bias_->get_primitive_desc(), *bias_, bias_scales,
                             mask_reorder, is_int8);
     }
-    // return bias_;
   }
 
   void ReorderQuantizeWeights(
@@ -449,7 +443,7 @@ class ConvPrimitiveFactory {
     if (residual_param) {
       auto residual_dt =
           paddle::framework::ToMKLDNNDataType(residual_param->type());
-      auto residual_data_tz = GetTensorDims(residual_param);
+      auto residual_data_tz = framework::vectorize2int(residual_param->dims());
       auto user_residual_md = platform::MKLDNNMemDesc(
           residual_data_tz, residual_dt, residual_param->format());
       auto residual_data = residual_param->data<T_out>();
@@ -617,7 +611,7 @@ class ConvMKLDNNOpKernel : public framework::OpKernel<T_in> {
     auto src_dt = platform::MKLDNNGetDataType<T_in>();
     auto src_format = input->format();
 
-    auto src_tz = GetTensorDims(input);
+    auto src_tz = framework::vectorize2int(input->dims());
     auto weights_tz = ComputeWeightsDims(ctx, weights, groups, is_conv3d);
     std::string key =
         GetHash(src_tz, src_dt, src_format, weights_tz, fuse_relu, fuse_brelu,
