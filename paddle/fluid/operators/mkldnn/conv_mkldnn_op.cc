@@ -128,15 +128,6 @@ class ConvPrimitiveFactory {
     return *conv_prim_;
   }
 
-  // mkldnn::memory Reorder(const memory::desc& src_desc,
-  //                        const memory::desc& dst_desc, const void* src_data) {
-  //   auto src_mem = memory({src_desc, engine_}, const_cast<void*>(src_data));
-  //   auto dst_mem = memory({dst_desc, engine_});
-  //   auto reorder = mkldnn::reorder(src_mem, dst_mem);
-  //   stream(stream::kind::eager).submit({reorder}).wait();
-  //   return dst_mem;
-  // }
-
   mkldnn::memory AcquireMemory(
       const mkldnn::memory::primitive_desc& mpd,       // NOLINT
       const mkldnn::memory::primitive_desc& user_mpd,  // NOLINT
@@ -178,44 +169,69 @@ class ConvPrimitiveFactory {
     return CreateMemDescriptor<T>(dims, format);
   }
 
+  // std::shared_ptr<mkldnn::memory> AcquireMemory(
+  //     const std::shared_ptr<mkldnn::memory>& user_memory_p,
+  //     const std::shared_ptr<mkldnn::memory>& target_memory_p,
+  //     const std::string& suffix,
+  //     std::vector<mkldnn::primitive>& pipeline) {  // NOLINT
+  //   auto local_key = key_ + suffix;
+  //   auto key_reorder_p = key_ + suffix + "reorder_p";
+
+  //   auto stored_reorder_p = std::static_pointer_cast<mkldnn::reorder>(
+  //       dev_ctx_.GetBlob(key_reorder_p));
+
+  //   if (stored_reorder_p) {
+  //     pipeline.push_back(*stored_reorder_p);
+  //   } else {
+  //     auto reorder_p =
+  //         std::make_shared<mkldnn::reorder>(*user_memory_p, *target_memory_p);
+  //     dev_ctx_.SetBlob(key_reorder_p, reorder_p);
+  //     pipeline.push_back(*reorder_p);
+  //   }
+
+  //   return target_memory_p;
+  // }
+
  private:
   void UpdateDataPointers(const ExecutionContext& ctx, Tensor* out,
                           const Tensor* in, const Tensor* residual_param) {
+    std::cout << "HERE EXISTING KEY FOUND. UPDATE NEW MEMORY"<< std::endl;
     auto user_src_md = CreateMemDescriptor<T_in>(in, in->format());
     auto user_src_memory = CreateMemory(user_src_md, in->data<T_in>());
     input_ =
         AcquireMemory(conv_prim_desc_->src_primitive_desc(),
                       user_src_memory.get_primitive_desc(), user_src_memory);
     // input_->set_data_handle(const_cast<T_in*>(in->data<T_in>()));
-
-    ResetDstMemory(ctx, residual_param, out);
-    // if (out->format() == memory::format::format_undef) {
-    //   auto output_format = output_->get_primitive_desc().desc().data.format;
-    // }
-  }
-
-  void ResetDstMemory(const ExecutionContext& ctx, const Tensor* residual_param,
-                      Tensor* out) {
     auto fetched_dst_format =
         conv_prim_desc_->dst_primitive_desc().desc().data.format;
+    size_t fetched_dst_size = conv_prim_desc_->dst_primitive_desc().get_size();
 
     if (residual_param) {
       residual_->set_data_handle(
           const_cast<T_out*>(residual_param->data<T_out>()));
       if (residual_param->format() != fetched_dst_format) {
+        auto output_data =
+          out->mutable_data<T_out>(ctx.GetPlace(), fetched_dst_size);
+        output_->set_data_handle(output_data);
+        // TODO reorder in another way
         output_ = AcquireMemory(conv_prim_desc_->dst_primitive_desc(),
                                 residual_->get_primitive_desc(), *residual_);
       } else {
-        output_ = residual_;
+        // output_ = residual_;
+        out->ShareDataWith(*residual_param);
+        auto output_data = out->mutable_data<T_out>(ctx.GetPlace());
+        output_->set_data_handle(output_data);
+        // dst_memory_p =
+        //     handler.AcquireDstMemoryFromPrimitive(to_void_cast<T>(output_data));
       }
     } else {
-      output_->set_data_handle(out->mutable_data<T_out>(ctx.GetPlace()));
-      // auto output_data = out->mutable_data<T_out>(ctx.GetPlace(), conv_prim_desc_->dst_primitive_desc().get_size());
-      // output_->set_data_handle(output_data);
+      auto output_data =
+          out->mutable_data<T_out>(ctx.GetPlace(), fetched_dst_size);
+      output_->set_data_handle(output_data);
     }
-    // auto output_data = out->mutable_data<T_out>(ctx.GetPlace(), conv_prim_desc_->dst_primitive_desc().get_size());
+    output_->set_data_handle(out->mutable_data<T_out>(ctx.GetPlace()));
     out->set_layout(DataLayout::kMKLDNN);                                                                
-    out->set_format(GetMKLDNNFormat(*output_));
+    out->set_format((memory::format)fetched_dst_format);
   }
 
   void CreateDstMemory(const ExecutionContext& ctx,
@@ -530,9 +546,9 @@ static MKLDNNDataType getDstType(bool is_int8, bool force_fp32_output,
   return dst_dt;
 }
 static std::string GetHash(const mkldnn::memory::dims& input_dims,  // NOLINT
+                           const mkldnn::memory::dims& weights_dims,  // NOLINT
                            const mkldnn::memory::data_type src_dt,
                            const memory::format& format,
-                           const mkldnn::memory::dims& weights_dims,  // NOLINT
                            const bool& fuse_relu,                     // NOLINT
                            const bool& fuse_brelu,                    // NOLINT
                            const bool& fuse_residual_conn,
@@ -556,11 +572,11 @@ static std::string GetHash(const mkldnn::memory::dims& input_dims,  // NOLINT
     return str;
   };
 
-  return dims2str(input_dims) + std::to_string(src_dt) +
-         std::to_string(format) + dims2str(weights_dims) +
-         std::to_string(fuse_relu) + std::to_string(fuse_brelu) +
-         std::to_string(fuse_residual_conn) + vec2str(strides) +
-         vec2str(paddings) + vec2str(dilations) + std::to_string(groups) +
+  return dims2str(input_dims) + std::to_string(src_dt) + "-" +
+         std::to_string(format) + "-" + dims2str(weights_dims) +
+         std::to_string(fuse_relu) + "-" + std::to_string(fuse_brelu) + "-" +
+         std::to_string(fuse_residual_conn) + "-" + vec2str(strides) +
+         vec2str(paddings) + vec2str(dilations) + std::to_string(groups) + "-" +
          suffix;
 }
 
@@ -625,17 +641,17 @@ class ConvMKLDNNOpKernel : public framework::OpKernel<T_in> {
     auto src_tz = framework::vectorize2int(input->dims());
     auto weights_tz = ComputeWeightsDims(ctx, weights, groups, is_conv3d);
     std::string key =
-        GetHash(src_tz, src_dt, src_format, weights_tz, fuse_relu, fuse_brelu,
+        GetHash(src_tz, weights_tz, src_dt, src_format,  fuse_relu, fuse_brelu,
                 fuse_residual_conn, strides, paddings, dilations, groups,
                 ctx.op().Input("Input") + ctx.op().Input("Filter"));
     
     auto dst_typename =
         getDstType(is_int8, force_fp32_output, fuse_relu, fuse_brelu,
-                   fuse_residual_conn, residual_param);
-    std::cout << "key:"<< key <<"  fuse_relu:" << fuse_relu << " fuse_brelu:" << fuse_brelu
+                   fuse_residual_conn, residual_param); 
+    std::cout << "key:"<< key <<std::endl; 
+/*"  fuse_relu:" << fuse_relu << " fuse_brelu:" << fuse_brelu
               << "  fuse_residual_conn:" << fuse_residual_conn
-              << "  force_fp32_output:" << force_fp32_output << std::endl;
-
+              << "  force_fp32_output:" << force_fp32_output << */
     std::shared_ptr<mkldnn::convolution_forward> conv_p;
     if (dst_typename == MKLDNNDataType::f32) {
       conv_p = std::make_shared<mkldnn::convolution_forward>(
