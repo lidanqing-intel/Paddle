@@ -576,7 +576,7 @@ class ConvMKLDNNOpKernel : public framework::OpKernel<T_in> {
     auto input = ctx.Input<LoDTensor>("Input");
     auto weights = ctx.Input<Tensor>("Filter");
     auto bias = ctx.Input<Tensor>("Bias");
-    auto output = ctx.Output<LoDTensor>("Out");
+    auto output = ctx.Output<LoDTensor>("Output");
 
     std::vector<int> strides = ctx.Attr<std::vector<int>>("strides");
     std::vector<int> paddings = ctx.Attr<std::vector<int>>("paddings");
