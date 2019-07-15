@@ -123,6 +123,8 @@ class ConvPrimitiveFactory {
 
     conv_prim_ = CreateConvPrimitive(*input_, *weights_, bias, residual_param,
                                      output, ctx, groups, weights_tz, is_int8);
+    output->set_layout(DataLayout::kMKLDNN);
+    output->set_format(GetMKLDNNFormat(*output_));
     return *conv_prim_;
   }
 
@@ -189,7 +191,6 @@ class ConvPrimitiveFactory {
     ResetDstMemory(ctx, residual_param, out);
     // if (out->format() == memory::format::format_undef) {
     //   auto output_format = output_->get_primitive_desc().desc().data.format;
-    //   out->set_format((memory::format)output_format);
     // }
   }
 
@@ -204,14 +205,17 @@ class ConvPrimitiveFactory {
       if (residual_param->format() != fetched_dst_format) {
         output_ = AcquireMemory(conv_prim_desc_->dst_primitive_desc(),
                                 residual_->get_primitive_desc(), *residual_);
-        // out->set_format((memory::format)fetched_dst_format);
       } else {
         output_ = residual_;
       }
     } else {
       output_->set_data_handle(out->mutable_data<T_out>(ctx.GetPlace()));
+      // auto output_data = out->mutable_data<T_out>(ctx.GetPlace(), conv_prim_desc_->dst_primitive_desc().get_size());
+      // output_->set_data_handle(output_data);
     }
-    out->set_format((memory::format)fetched_dst_format);
+    // auto output_data = out->mutable_data<T_out>(ctx.GetPlace(), conv_prim_desc_->dst_primitive_desc().get_size());
+    out->set_layout(DataLayout::kMKLDNN);                                                                
+    out->set_format(GetMKLDNNFormat(*output_));
   }
 
   void CreateDstMemory(const ExecutionContext& ctx,
@@ -224,13 +228,11 @@ class ConvPrimitiveFactory {
     if (residual_param) {
       auto residual_dt =
           paddle::framework::ToMKLDNNDataType(residual_param->type());
-      auto residual_data_tz = framework::vectorize2int(residual_param->dims());
-      auto user_residual_md = platform::MKLDNNMemDesc(
-          residual_data_tz, residual_dt, residual_param->format());
-      auto residual_data = residual_param->data<T_out>();
+      auto residual_tz = framework::vectorize2int(residual_param->dims());
+      auto residual_md = platform::MKLDNNMemDesc(
+          residual_tz, residual_dt, residual_param->format());
       residual_ = CreateMemory(
-          user_residual_md,
-          to_void_cast<T_out>(residual_data));  // Note: If the residual_param
+          residual_md, residual_param->data<T_out>());  // Note: If the residual_param
                                                 // exists and valid. The T_out
                                                 // is exactly the
                                                 // residual_param->type()
@@ -246,7 +248,7 @@ class ConvPrimitiveFactory {
     } else {
       auto output_data =
           out->mutable_data<T_out>(ctx.GetPlace(), fetched_dst_memory_size);
-      auto output_ = mkldnn::memory(conv_prim_desc_->dst_primitive_desc(),
+      output_ = mkldnn::memory(conv_prim_desc_->dst_primitive_desc(),
                                     to_void_cast<T_out>(output_data));
     }
   }
@@ -470,7 +472,7 @@ class ConvPrimitiveFactory {
     CreateDstMemory(ctx, residual_param, output);
 
     if (bias) {
-      auto bias_desc = CreateMemDescriptor<T_w>(bias, bias->format());
+      auto bias_desc = CreateMemDescriptor<T_w>(bias, mkldnn::memory::format::x);
       bias_ = CreateMemory(bias_desc, bias->data<T_w>());
       QuantizeBias(ctx, groups, weights_tz, is_int8);
       return convolution_forward(*conv_prim_desc_, *input_, *weights_, *bias_,
@@ -668,7 +670,7 @@ class ConvMKLDNNOpKernel : public framework::OpKernel<T_in> {
       // stream(stream::kind::eager).submit({conv}).wait();
     }
     stream(stream::kind::eager).submit({*conv_p}).wait();
-    output->set_layout(DataLayout::kMKLDNN);
+    // output->set_layout(DataLayout::kMKLDNN);
   }
 };
 }  // namespace operators
