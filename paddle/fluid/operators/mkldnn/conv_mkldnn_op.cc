@@ -99,7 +99,7 @@ class ConvPrimitiveFactory {
         GetChosenFormat(ctx, src_tz.size(), groups, is_conv3d);
     auto src_md = CreateMemDescriptor<T_in>(src_tz, chosen_memory_format);
     auto weights_md = CreateMemDescriptor<T_w>(weights_tz, weights_format_any);
-    auto dst_tz = framework::vectorize2int(output->dims());
+    std::vector<int> dst_tz = paddle::framework::vectorize2int(output->dims());
     auto dst_md = CreateMemDescriptor<T_out>(dst_tz, chosen_memory_format);
     std::shared_ptr<mkldnn::memory::desc> bias_md_p;
     if (bias) {
@@ -630,6 +630,11 @@ class ConvMKLDNNOpKernel : public framework::OpKernel<T_in> {
     auto dst_typename =
         getDstType(is_int8, force_fp32_output, fuse_relu, fuse_brelu,
                    fuse_residual_conn, residual_param);
+    std::cout << "  fuse_relu:" << fuse_relu << " fuse_brelu:" << fuse_brelu
+              << "  fuse_residual_conn:" << fuse_residual_conn
+              << "  force_fp32_output:" << force_fp32_output << std::endl;
+    std::vector<int> dst_tz = paddle::framework::vectorize2int(output->dims());
+    std::cout << "dst_tz:" << dst_tz.size() << std::endl;
 
     std::shared_ptr<mkldnn::convolution_forward> conv_p;
     if (dst_typename == MKLDNNDataType::f32) {
