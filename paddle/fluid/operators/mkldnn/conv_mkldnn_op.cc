@@ -106,7 +106,7 @@ class ConvPrimitiveFactory {
       auto bias_tz = paddle::framework::vectorize2int(bias->dims());
       auto bias_md_p =
           std::make_shared<mkldnn::memory::desc>(platform::MKLDNNMemDesc(
-              bias_tz, platform::MKLDNNGetDataType<T_w>(), memory::format::x));
+              bias_tz, platform::MKLDNNGetDataType<T_w>(), mkldnn::memory::format::x));
     }
     conv_prim_desc_ = CreateConvPrimDesc(
         ctx, src_md, weights_md, bias_md_p, dst_md, strides, paddings,
@@ -128,14 +128,14 @@ class ConvPrimitiveFactory {
     return *conv_prim_;
   }
 
-  mkldnn::memory Reorder(const memory::desc& src_desc,
-                         const memory::desc& dst_desc, const void* src_data) {
-    auto src_mem = memory({src_desc, engine_}, const_cast<void*>(src_data));
-    auto dst_mem = memory({dst_desc, engine_});
-    auto reorder = mkldnn::reorder(src_mem, dst_mem);
-    stream(stream::kind::eager).submit({reorder}).wait();
-    return dst_mem;
-  }
+  // mkldnn::memory Reorder(const memory::desc& src_desc,
+  //                        const memory::desc& dst_desc, const void* src_data) {
+  //   auto src_mem = memory({src_desc, engine_}, const_cast<void*>(src_data));
+  //   auto dst_mem = memory({dst_desc, engine_});
+  //   auto reorder = mkldnn::reorder(src_mem, dst_mem);
+  //   stream(stream::kind::eager).submit({reorder}).wait();
+  //   return dst_mem;
+  // }
 
   mkldnn::memory AcquireMemory(
       const mkldnn::memory::primitive_desc& mpd,       // NOLINT
@@ -628,15 +628,13 @@ class ConvMKLDNNOpKernel : public framework::OpKernel<T_in> {
         GetHash(src_tz, src_dt, src_format, weights_tz, fuse_relu, fuse_brelu,
                 fuse_residual_conn, strides, paddings, dilations, groups,
                 ctx.op().Input("Input") + ctx.op().Input("Filter"));
-
+    
     auto dst_typename =
         getDstType(is_int8, force_fp32_output, fuse_relu, fuse_brelu,
                    fuse_residual_conn, residual_param);
-    std::cout << "  fuse_relu:" << fuse_relu << " fuse_brelu:" << fuse_brelu
+    std::cout << "key:"<< key <<"  fuse_relu:" << fuse_relu << " fuse_brelu:" << fuse_brelu
               << "  fuse_residual_conn:" << fuse_residual_conn
               << "  force_fp32_output:" << force_fp32_output << std::endl;
-    std::vector<int> dst_tz = paddle::framework::vectorize2int(output->dims());
-    std::cout << "dst_tz:" << dst_tz.size() << std::endl;
 
     std::shared_ptr<mkldnn::convolution_forward> conv_p;
     if (dst_typename == MKLDNNDataType::f32) {
