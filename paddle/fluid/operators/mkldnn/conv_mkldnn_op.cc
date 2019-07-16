@@ -113,10 +113,10 @@ class ConvPrimitiveFactory {
         fuse_relu, fuse_residual_conn, fuse_brelu, fuse_brelu_threshold,
         is_test, groups, weights_tz, is_int8);
 
-    auto user_src_memory = CreateMemory(user_src_md, input->data<T_in>());
+    user_src_ = CreateMemory(user_src_md, input->data<T_in>());
     input_ =
         AcquireMemory(conv_prim_desc_->src_primitive_desc(),
-                      user_src_memory.get_primitive_desc(), user_src_memory);
+                      user_src_ ->get_primitive_desc(), *user_src_);
     weights_ =
         CreateMemory(user_weights_md,
                      weights->data<T_w>());  // to_void_cast<T_w>(weights_data)
@@ -173,12 +173,11 @@ class ConvPrimitiveFactory {
   void UpdateDataPointers(const ExecutionContext& ctx, Tensor* out,
                           const Tensor* in, const Tensor* residual_param) {
     std::cout << "HERE EXISTING KEY FOUND. UPDATE NEW MEMORY"<< std::endl;
-    auto user_src_md = CreateMemDescriptor<T_in>(in, in->format());
-    auto user_src_memory = CreateMemory(user_src_md, in->data<T_in>());
+    user_src_ -> set_data_handle(const_cast<T_in*>(in->data<T_in>()));
     //user_memory is needed for mem_p->set_data_handle(ptr);
-    *input_ =
+    input_ =
         AcquireMemory(conv_prim_desc_->src_primitive_desc(),
-                      user_src_memory.get_primitive_desc(), user_src_memory);
+                      user_src_ ->get_primitive_desc(), *user_src_);
     //weights need to be reordered too
     // input_->set_data_handle(const_cast<T_in*>(in->data<T_in>()));
     auto fetched_dst_format =
@@ -478,6 +477,7 @@ class ConvPrimitiveFactory {
   const mkldnn::engine& engine_;
   boost::optional<memory> bias_;
   boost::optional<memory> input_;
+  boost::optional<memory> user_src_;
   boost::optional<memory> output_;
   boost::optional<memory> weights_;
   boost::optional<memory> residual_;
