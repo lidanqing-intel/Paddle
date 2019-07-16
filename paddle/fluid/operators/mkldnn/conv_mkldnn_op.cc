@@ -169,38 +169,17 @@ class ConvPrimitiveFactory {
     return CreateMemDescriptor<T>(dims, format);
   }
 
-  // std::shared_ptr<mkldnn::memory> AcquireMemory(
-  //     const std::shared_ptr<mkldnn::memory>& user_memory_p,
-  //     const std::shared_ptr<mkldnn::memory>& target_memory_p,
-  //     const std::string& suffix,
-  //     std::vector<mkldnn::primitive>& pipeline) {  // NOLINT
-  //   auto local_key = key_ + suffix;
-  //   auto key_reorder_p = key_ + suffix + "reorder_p";
-
-  //   auto stored_reorder_p = std::static_pointer_cast<mkldnn::reorder>(
-  //       dev_ctx_.GetBlob(key_reorder_p));
-
-  //   if (stored_reorder_p) {
-  //     pipeline.push_back(*stored_reorder_p);
-  //   } else {
-  //     auto reorder_p =
-  //         std::make_shared<mkldnn::reorder>(*user_memory_p, *target_memory_p);
-  //     dev_ctx_.SetBlob(key_reorder_p, reorder_p);
-  //     pipeline.push_back(*reorder_p);
-  //   }
-
-  //   return target_memory_p;
-  // }
-
  private:
   void UpdateDataPointers(const ExecutionContext& ctx, Tensor* out,
                           const Tensor* in, const Tensor* residual_param) {
     std::cout << "HERE EXISTING KEY FOUND. UPDATE NEW MEMORY"<< std::endl;
     auto user_src_md = CreateMemDescriptor<T_in>(in, in->format());
     auto user_src_memory = CreateMemory(user_src_md, in->data<T_in>());
+    //user_memory is needed for mem_p->set_data_handle(ptr);
     input_ =
         AcquireMemory(conv_prim_desc_->src_primitive_desc(),
                       user_src_memory.get_primitive_desc(), user_src_memory);
+    //weights need to be reordered too
     // input_->set_data_handle(const_cast<T_in*>(in->data<T_in>()));
     auto fetched_dst_format =
         conv_prim_desc_->dst_primitive_desc().desc().data.format;
@@ -210,12 +189,12 @@ class ConvPrimitiveFactory {
       residual_->set_data_handle(
           const_cast<T_out*>(residual_param->data<T_out>()));
       if (residual_param->format() != fetched_dst_format) {
-        auto output_data =
-          out->mutable_data<T_out>(ctx.GetPlace(), fetched_dst_size);
-        output_->set_data_handle(output_data);
+        // auto output_data =
+        //   out->mutable_data<T_out>(ctx.GetPlace(), fetched_dst_size);
         // TODO reorder in another way
         output_ = AcquireMemory(conv_prim_desc_->dst_primitive_desc(),
                                 residual_->get_primitive_desc(), *residual_);
+        // output_->set_data_handle(output_data);
       } else {
         // output_ = residual_;
         out->ShareDataWith(*residual_param);
@@ -229,7 +208,7 @@ class ConvPrimitiveFactory {
           out->mutable_data<T_out>(ctx.GetPlace(), fetched_dst_size);
       output_->set_data_handle(output_data);
     }
-    output_->set_data_handle(out->mutable_data<T_out>(ctx.GetPlace()));
+    // output_->set_data_handle(out->mutable_data<T_out>(ctx.GetPlace()));
     out->set_layout(DataLayout::kMKLDNN);                                                                
     out->set_format((memory::format)fetched_dst_format);
   }
@@ -267,6 +246,8 @@ class ConvPrimitiveFactory {
       output_ = mkldnn::memory(conv_prim_desc_->dst_primitive_desc(),
                                     to_void_cast<T_out>(output_data));
     }
+    out->set_layout(DataLayout::kMKLDNN);                                                                
+    out->set_format((memory::format)fetched_dst_format);
   }
 
   inline memory::format GetChosenFormat(const ExecutionContext& ctx,

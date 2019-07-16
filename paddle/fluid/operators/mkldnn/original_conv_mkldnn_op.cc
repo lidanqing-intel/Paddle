@@ -246,7 +246,8 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
         auto user_residual_memory_p = handler.AcquireResidualDataMemory(
             user_residual_md, to_void_cast<T>(residual_param_data));
 
-        dst_memory_p = handler.AcquireDstMemoryFromResidualDataMemory(
+        dst_memory_p = handler.AcquireDstMemoryFromR
+        esidualDataMemory(
             user_residual_memory_p, to_void_cast<T>(output_data), pipeline);
       } else {
         output->ShareDataWith(*residual_param);
