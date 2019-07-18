@@ -80,8 +80,19 @@ class ConvPrimitiveFactory {
       const float fuse_brelu_threshold, bool fuse_residual_conn,
       const Tensor* residual_param, LoDTensor* output, bool is_test,
       const ExecutionContext& ctx, bool is_int8) {
+    if (is_int8 &&
+        platform::MKLDNNGetDataType<T_out>() == memory::data_type::f32) {
+      std::cout << "Shock" << platform::MKLDNNGetDataType<T_out>() << std::endl;
+    }
     if (conv_prim_) {
+      if (is_int8) {
+        std::cout << "I am in second iteration of INT8 at least" << std::endl;
+      }
       UpdateDataPointers(ctx, output, input, residual_param);
+      if (is_int8 && fuse_residual_conn && (fuse_relu || fuse_brelu) &&
+          platform::MKLDNNGetDataType<T_out>() == memory::data_type::s8) {
+        output->mutable_data<uint8_t>(ctx.GetPlace());
+      }
       return *conv_prim_;  // This is returned and all reorder are returned
     }
 
@@ -150,6 +161,10 @@ class ConvPrimitiveFactory {
           convolution_forward(*conv_prim_desc_, *input_, *weights_, *output_);
     }
 
+    if (is_int8 && fuse_residual_conn && (fuse_relu || fuse_brelu) &&
+        platform::MKLDNNGetDataType<T_out>() == memory::data_type::s8) {
+      output->mutable_data<uint8_t>(ctx.GetPlace());
+    }
     output->set_layout(DataLayout::kMKLDNN);
     output->set_format(GetMKLDNNFormat(*output_));
     return *conv_prim_;
@@ -201,8 +216,6 @@ class ConvPrimitiveFactory {
     user_src_->set_data_handle(const_cast<T_in*>(in->data<T_in>()));
     input_ = AcquireMemory(conv_prim_desc_->src_primitive_desc(),
                            user_src_->get_primitive_desc(), *user_src_);
-    // weights need to be reordered too
-    // input_->set_data_handle(const_cast<T_in*>(in->data<T_in>()));
     auto fetched_dst_format =
         conv_prim_desc_->dst_primitive_desc().desc().data.format;
     size_t fetched_dst_size = conv_prim_desc_->dst_primitive_desc().get_size();
@@ -224,6 +237,7 @@ class ConvPrimitiveFactory {
       output_->set_data_handle(output_data);
     }
     out->mutable_data<T_out>(ctx.GetPlace());
+
     out->set_layout(DataLayout::kMKLDNN);
     out->set_format((memory::format)fetched_dst_format);
   }
@@ -511,13 +525,13 @@ GetConvPrimitiveFactory(const MKLDNNDeviceContext& dev_ctx,
   return prim_creator;
 }
 
-static MKLDNNDataType getDstType(bool is_int8, bool force_fp32_output,
+static MKLDNNDataType GetDstType(bool is_int8, bool force_fp32_output,
                                  bool fuse_relu, bool fuse_brelu,
                                  bool fuse_residual_conn,
                                  const Tensor* residual_param) {
   auto dst_dt = MKLDNNDataType::f32;  // uint8_t, int8_t, float
   if (is_int8) {
-    auto dst_dt =
+    dst_dt =
         (fuse_relu || fuse_brelu) ? MKLDNNDataType::u8 : MKLDNNDataType::s8;
 
     if (force_fp32_output) {
@@ -631,12 +645,8 @@ class ConvMKLDNNOpKernel : public framework::OpKernel<T_in> {
                 ctx.op().Input("Input") + ctx.op().Input("Filter"));
 
     auto dst_typename =
-        getDstType(is_int8, force_fp32_output, fuse_relu, fuse_brelu,
+        GetDstType(is_int8, force_fp32_output, fuse_relu, fuse_brelu,
                    fuse_residual_conn, residual_param);
-    //    std::cout << "key:"<< key <<std::endl;
-    /*"  fuse_relu:" << fuse_relu << " fuse_brelu:" << fuse_brelu
-                  << "  fuse_residual_conn:" << fuse_residual_conn
-                  << "  force_fp32_output:" << force_fp32_output << */
     std::shared_ptr<mkldnn::convolution_forward> conv_p;
     if (dst_typename == MKLDNNDataType::f32) {
       conv_p = std::make_shared<mkldnn::convolution_forward>(
