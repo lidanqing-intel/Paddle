@@ -46,10 +46,9 @@ static std::vector<int> GetWeightsTz(const ExecutionContext& ctx,
                                      bool is_conv3d) {
   std::vector<int> weights_tz = framework::vectorize2int(weights->dims());
   int g = std::max(groups, 1);
-  if (g > 1) {  // is_conv3d = true, convert [out_n, in_n, c, h, w] to [g,
-                // out_n/g, in_n, c, h, w]
-    // is_conv3d = false, convert [out_n, in_n, h, w] to [g, out_n/g, in_n, h,
-    // w]
+  if (g > 1) {  
+    // is_conv3d = true, [out_n, in_n, c, h, w] to [g, out_n/g, in_n, c, h, w]
+    // is_conv3d = false, [out_n, in_n, h, w] to [g, out_n/g, in_n, h, w]
     weights_tz.push_back(0);
     std::rotate(weights_tz.begin(), weights_tz.end() - 1, weights_tz.end());
     weights_tz[0] = groups;
@@ -126,26 +125,26 @@ class ConvPrimitiveFactory {
         fuse_relu, fuse_residual_conn, fuse_brelu, fuse_brelu_threshold,
         is_test, groups, weights_tz, is_int8);
 
-    user_src_ = CreateMemory(user_src_md, input->data<T_in>());
-    input_ = AcquireMemory(conv_prim_desc_->src_primitive_desc(),
-                           user_src_->get_primitive_desc(), *user_src_);
-    user_weights_ =
+    user_src_p = CreateMemory(user_src_md, input->data<T_in>());
+    input_p = AcquireMemory(conv_prim_desc_->src_primitive_desc(),
+                           user_src_p->get_primitive_desc(), user_src_p);
+    user_weights_p =
         CreateMemory(user_weights_md,
-                     weights->data<T_w>());  // to_void_cast<T_w>(weights_data)
-    weights_ = ReorderQuantizeWeights(
+                     weights->data<T_w>());  // to_void_cast<T_w>(weights_pdata)
+    weights_p = ReorderQuantizeWeights(
         ctx, groups, is_int8);  // is_persistent = true, is_test = true
     CreateDstMemory(ctx, residual_param, output);
 
     if (bias) {
       auto user_bias_md =
           CreateMemDescriptor<T_w>(bias, mkldnn::memory::format::x);
-      user_bias_ = CreateMemory(user_bias_md, bias->data<T_w>());
+      user_bias_p = CreateMemory(user_bias_md, bias->data<T_w>());
       bias_ = QuantizeBias(ctx, groups, weights_tz, is_int8);
-      conv_prim_ = convolution_forward(*conv_prim_desc_, *input_, *weights_,
+      conv_prim_ = convolution_forward(*conv_prim_desc_, *input_, *weights_p,
                                        *bias_, *output_);
     } else {
       conv_prim_ =
-          convolution_forward(*conv_prim_desc_, *input_, *weights_, *output_);
+          convolution_forward(*conv_prim_desc_, *input_p, *weights_p, *output_);
     }
 
     if (is_int8 && fuse_residual_conn && (fuse_relu || fuse_brelu) &&
@@ -157,56 +156,44 @@ class ConvPrimitiveFactory {
     return *conv_prim_;
   }
 
-  mkldnn::memory AcquireMemory(
+  std::shared_ptr<mkldnn::memory> AcquireMemory(
       const mkldnn::memory::primitive_desc& mpd,       // NOLINT
       const mkldnn::memory::primitive_desc& user_mpd,  // NOLINT
-      const mkldnn::memory& user_memory, std::vector<float> scale_data = {1.0f},
+      const shared_ptr<mkldnn::memory>& user_memory, std::vector<float> scale_data = {1.0f},
       int mask = 0, bool is_INT8 = false) {
     // create reorder primitive if the input format is not the preferred one
+    mkldnn::memory dst_mem_p = std::make_shared<mkldnn::memory>(mpd);
     if (mpd != user_mpd) {
-      mkldnn::memory dst_mem = mkldnn::memory(mpd);
       if (is_INT8) {
         mkldnn::primitive_attr attri;  // attribute for int8 weights and bias
         attri.set_output_scales(mask, scale_data);
         mkldnn::reorder::primitive_desc reorder_pd =
             mkldnn::reorder::primitive_desc(user_mpd, mpd, attri);
         mkldnn::reorder reorder =
-            mkldnn::reorder(reorder_pd, user_memory, dst_mem);
+            mkldnn::reorder(reorder_pd, *user_memory, *dst_mem_p);
         stream(stream::kind::eager).submit({reorder}).wait();
       } else {
-        auto reorder = mkldnn::reorder(user_memory, dst_mem);
+        auto reorder = mkldnn::reorder(*user_memory, *dst_mem_p);
         stream(stream::kind::eager).submit({reorder}).wait();
       }
-      return dst_mem;
     } else {
-      return user_memory;
+      dst_mem_p = user_memory;
     }
+    return dst_mem_p;
   }
 
-  mkldnn::memory ReorderMemory(
-      const mkldnn::memory::primitive_desc& mpd,       // NOLINT
-      const mkldnn::memory::primitive_desc& user_mpd,  // NOLINT
-      const mkldnn::memory& user_memory, std::vector<float> scale_data = {1.0f},
-      int mask = 0, bool is_INT8 = false) {
-    // create reorder primitive if the input format is not the preferred one
-    if (mpd != user_mpd) {
-      mkldnn::memory dst_mem = mkldnn::memory(mpd);
-      if (is_INT8) {
-        mkldnn::primitive_attr attri;  // attribute for int8 weights and bias
-        attri.set_output_scales(mask, scale_data);
-        mkldnn::reorder::primitive_desc reorder_pd =
-            mkldnn::reorder::primitive_desc(user_mpd, mpd, attri);
-        mkldnn::reorder reorder =
-            mkldnn::reorder(reorder_pd, user_memory, dst_mem);
-        stream(stream::kind::eager).submit({reorder}).wait();
-      } else {
-        auto reorder = mkldnn::reorder(user_memory, dst_mem);
-        stream(stream::kind::eager).submit({reorder}).wait();
-      }
-      return dst_mem;
-    } else {
-      return user_memory;
+  std::shared_ptr<mkldnn::memory> AcquireMemory(
+      const std::shared_ptr<mkldnn::memory>& user_memory_p,
+      const std::shared_ptr<mkldnn::memory>& target_memory_p) {
+    if user_memory_p->get_primitive_desc() != target_memory_p->get_primitive_desc(){
+      auto reorder_p =
+          std::make_shared<mkldnn::reorder>(*user_memory_p, *target_memory_p);
+      stream(stream::kind::eager).submit({*reorder_p}).wait();
     }
+    else{
+      target_memory_p = user_memory_p;
+    }
+    return target_memory_p;
   }
 
   template <typename T>
@@ -226,9 +213,9 @@ class ConvPrimitiveFactory {
  private:
   void UpdateDataPointers(const ExecutionContext& ctx, Tensor* out,
                           const Tensor* in, const Tensor* residual_param) {
-    user_src_->set_data_handle(const_cast<T_in*>(in->data<T_in>()));
-    input_ = AcquireMemory(conv_prim_desc_->src_primitive_desc(),
-                           user_src_->get_primitive_desc(), *user_src_);
+    user_src_p->set_data_handle(const_cast<T_in*>(in->data<T_in>()));
+    input_p = AcquireMemory(conv_prim_desc_->src_primitive_desc(),
+                           user_src_p->get_primitive_desc(), *user_src_p);
     auto fetched_dst_format =
         conv_prim_desc_->dst_primitive_desc().desc().data.format;
     size_t fetched_dst_size = conv_prim_desc_->dst_primitive_desc().get_size();
@@ -317,14 +304,15 @@ class ConvPrimitiveFactory {
   }
 
   template <typename T>
-  mkldnn::memory CreateMemory(const mkldnn::memory::desc& desc,
+  std::shared_ptr<mkldnn::memory> CreateMemory(const mkldnn::memory::desc& desc,
                               const Tensor* tensor) {
     return CreateMemory(desc, tensor->data<T>());
   }
 
-  mkldnn::memory CreateMemory(const mkldnn::memory::desc& desc,
+  std::shared_ptr<mkldnn::memory> CreateMemory(const mkldnn::memory::desc& desc,
                               const void* data) {
-    return memory({desc, engine_}, const_cast<void*>(data));
+    auto memory_p = std::make_shared<mkldnn::memory>({desc, engine_}, const_cast<void*>(data));
+    return memory_p;
   }
 
   std::vector<float> ComputeBiasScales(const ExecutionContext& ctx,
@@ -348,7 +336,7 @@ class ConvPrimitiveFactory {
     return scale_bias_data;
   }
 
-  mkldnn::memory QuantizeBias(const ExecutionContext& ctx, const int groups,
+  std::shared_ptr<mkldnn::memory> QuantizeBias(const ExecutionContext& ctx, const int groups,
                               const std::vector<int>& weights_tz,
                               bool is_int8) {
     if (is_int8) {
@@ -358,15 +346,15 @@ class ConvPrimitiveFactory {
       int mask_reorder =
           is_multi_channel ? 1 << 0 : 1;  // 0000 0010 : 0000 0001
       bias_ = AcquireMemory(conv_prim_desc_->bias_primitive_desc(),
-                            user_bias_->get_primitive_desc(), *user_bias_,
+                            user_bias_p->get_primitive_desc(), *user_bias_p,
                             bias_scales, mask_reorder, is_int8);
     } else {
-      bias_ = user_bias_;
+      bias_ = user_bias_p;
     }
-    return *bias_;
+    return bias_;
   }
 
-  mkldnn::memory ReorderQuantizeWeights(const ExecutionContext& ctx,
+  std::shared_ptr<mkldnn::memory> ReorderQuantizeWeights(const ExecutionContext& ctx,
                                         const int groups, bool is_int8) {
     if (is_int8) {
       auto scale_weights_data = ctx.Attr<std::vector<float>>("Scale_weights");
@@ -374,16 +362,16 @@ class ConvPrimitiveFactory {
       int mask_reorder = is_multi_channel
                              ? ((groups != 1) ? (1 << 1) + (1 << 0) : 1 << 0)
                              : 0;  // 0000 0011: 0000 0001 : 0000 0000
-      weights_ =
+      weights_p =
           AcquireMemory(conv_prim_desc_->weights_primitive_desc(),
-                        user_weights_->get_primitive_desc(), *user_weights_,
+                        user_weights_p->get_primitive_desc(), user_weights_p,
                         scale_weights_data, mask_reorder, is_int8);
     } else {
-      weights_ =
+      weights_p =
           AcquireMemory(conv_prim_desc_->weights_primitive_desc(),
-                        user_weights_->get_primitive_desc(), *user_weights_);
+                        user_weights_p->get_primitive_desc(), user_weights_p);
     }
-    return *weights_;
+    return weights_p;
   }
 
   std::vector<float> ComputeOutputShiftScale(
@@ -509,16 +497,17 @@ class ConvPrimitiveFactory {
  private:
   const mkldnn::engine& engine_;
   // TODO(lidanqing) consider shared_ptr to avoid memory copy
-  boost::optional<memory> bias_;
-  boost::optional<memory> user_bias_;
-  boost::optional<memory> input_;
-  boost::optional<memory> user_src_;
-  boost::optional<memory> output_;
-  boost::optional<memory> weights_;
-  boost::optional<memory> user_weights_;
-  boost::optional<memory> residual_;
-  boost::optional<mkldnn::convolution_forward> conv_prim_;
-  boost::optional<mkldnn::convolution_forward::primitive_desc> conv_prim_desc_;
+
+  std::shared_ptr<memory> bias_;
+  std::shared_ptr<memory> user_bias_p;
+  std::shared_ptr<memory> input_p;
+  std::shared_ptr<memory> user_src_p;
+  std::shared_ptr<memory> output_;
+  std::shared_ptr<memory> weights_;
+  std::shared_ptr<memory> user_weights_p;
+  std::shared_ptr<memory> residual_;
+  std::shared_ptr<mkldnn::convolution_forward> conv_prim_;
+  std::shared_ptr<mkldnn::convolution_forward::primitive_desc> conv_prim_desc_;
 };
 
 // T_w is the type of user_weights and user_bias. In convolution they are both
