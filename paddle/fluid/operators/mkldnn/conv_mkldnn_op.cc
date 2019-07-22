@@ -116,6 +116,7 @@ class ConvPrimitiveFactory {
       const Tensor* residual_param, LoDTensor* output, bool is_test,
       const ExecutionContext& ctx, bool is_int8) {
     if (conv_prim_) {
+      std::cout<<"---------------------------REUSE-------------------------------"<<std::endl;
       UpdateDataPointers(ctx, output, input, residual_param);
       if (is_int8 && fuse_residual_conn && (fuse_relu || fuse_brelu) &&
           platform::MKLDNNGetDataType<T_out>() == memory::data_type::s8) {
@@ -123,7 +124,7 @@ class ConvPrimitiveFactory {
       }
       return conv_prim_;
     }
-
+    std::cout<<"---------------------------CREATE---------------------------"<<std::endl;
     auto weights_tz = GetWeightsTz(ctx, weights, groups, is_conv3d);
     auto weights_format =
         GetWeightsFormat(weights->format(), groups, is_conv3d, is_int8);
@@ -601,17 +602,19 @@ static mkldnn::memory::data_type GetDstType(bool is_int8,
   }
   return dst_dt;
 }
+
 static std::string GetHash(const mkldnn::memory::dims& input_dims,    // NOLINT
                            const mkldnn::memory::dims& weights_dims,  // NOLINT
-                           const mkldnn::memory::data_type src_dt,    // NOLINT
-                           const memory::format& format,              // NOLINT
-                           const bool& fuse_relu,                     // NOLINT
-                           const bool& fuse_brelu,                    // NOLINT
-                           const bool& fuse_residual_conn,
                            std::vector<int>& strides,    // NOLINT
                            std::vector<int>& paddings,   // NOLINT
                            std::vector<int>& dilations,  // NOLINT
-                           int groups, const std::string& suffix) {
+                           int groups, 
+                           const mkldnn::memory::data_type& src_dt,    // NOLINT
+                           const memory::format& format,              // NOLINT
+                           const bool& fuse_relu,                     // NOLINT
+                           const bool& fuse_residual_conn,
+                           const bool& fuse_brelu,                    // NOLINT
+                           const std::string& suffix) {
   auto dims2str = [](const mkldnn::memory::dims& operand_dims) {
     std::string str = "";
     for (size_t i = 0; i < operand_dims.size(); ++i) {
@@ -690,19 +693,20 @@ class ConvMKLDNNOpKernel : public framework::OpKernel<T_in> {
                      "is_conv3d is not enabled when is_int8 is true");
     }
     auto src_dt = platform::MKLDNNGetDataType<T_in>();
-    auto src_format = input->format();
+    // auto src_format = input->format();
     auto src_tz = framework::vectorize2int(input->dims());
     auto weights_tz = GetWeightsTz(ctx, weights, groups, is_conv3d);
     std::string key;
     key.reserve(MaxKeyLength);
-    key = GetHash(src_tz, weights_tz, src_dt, src_format, fuse_relu, fuse_brelu,
-                fuse_residual_conn, strides, paddings, dilations, groups,
+    key = GetHash(src_tz, weights_tz, strides, paddings, dilations, groups, src_dt, input->format(), fuse_relu, 
+                fuse_residual_conn, fuse_brelu,
                 ctx.op().Input("Input") + ctx.op().Input("Filter"));
     auto dst_typename =
         GetDstType(is_int8, force_fp32_output, fuse_relu, fuse_brelu,
                    fuse_residual_conn, residual_param);
 
     std::shared_ptr<mkldnn::convolution_forward> conv_p;
+    std::cout<<"key"<<key<<std::endl;
     if (dst_typename == mkldnn::memory::data_type::f32) {
       conv_p =
           GetConvPrimitiveFactory<T_in, T_w, float>(dev_ctx, key, mkldnn_engine)
