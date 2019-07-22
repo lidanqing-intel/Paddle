@@ -69,6 +69,26 @@ inline mkldnn::memory::format GetWeightsFormat(mkldnn::memory::format format,
   }
 }
 
+static mkldnn::memory::data_type GetDstType(bool is_int8,
+                                            bool force_fp32_output,
+                                            bool fuse_relu, bool fuse_brelu,
+                                            bool fuse_residual_conn,
+                                            const Tensor* residual_param) {
+  auto dst_dt = mkldnn::memory::data_type::f32;  // uint8_t, int8_t, float
+  if (is_int8) {
+    dst_dt = (fuse_relu || fuse_brelu) ? mkldnn::memory::data_type::u8
+                                       : mkldnn::memory::data_type::s8;
+    if (force_fp32_output) {
+      dst_dt = mkldnn::memory::data_type::f32;
+    }
+    if (fuse_residual_conn && residual_param) {
+      auto residual_dt = framework::ToMKLDNNDataType(residual_param->type());
+      if (dst_dt != residual_dt) dst_dt = residual_dt;
+    }
+  }
+  return dst_dt;
+}
+
 template <typename T, typename K>
 class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
  public:
@@ -80,7 +100,19 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
     if (!is_INT8) {
       ComputeFP32(ctx);
     } else {
-      ComputeINT8(ctx);
+      bool fuse_relu = ctx.Attr<bool>("fuse_relu");
+      bool fuse_residual_conn = ctx.Attr<bool>("fuse_residual_connection");
+      bool fuse_brelu = ctx.Attr<bool>("fuse_brelu");
+      bool force_fp32_output = ctx.Attr<bool>("force_fp32_output");
+      auto residual_param = ctx.Input<Tensor>("ResidualData");
+      auto dst_dt = GetDstType(true, force_fp32_output, fuse_relu, fuse_brelu, fuse_residual_conn, residual_param);
+      if (dst_dt == mkldnn::memory::data_type::f32) {
+        ComputeINT8<float>(ctx);
+      } else if (dst_dt == mkldnn::memory::data_type::u8) {
+        ComputeINT8<uint8_t>(ctx);
+      } else if (dst_dt == mkldnn::memory::data_type::s8) {
+        ComputeINT8<int8_t>(ctx);
+      }
     }
   }
 
@@ -286,7 +318,7 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
     output->set_layout(DataLayout::kMKLDNN);
     output->set_format(GetMKLDNNFormat(*dst_memory_p));
   }
-
+  template <typename T_out>
   void ComputeINT8(const paddle::framework::ExecutionContext& ctx) const {
     const bool is_test = ctx.Attr<bool>("is_test");
 
@@ -354,23 +386,6 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
 
     mkldnn::memory::data_type src_dt =
         paddle::framework::ToMKLDNNDataType(input->type());
-
-    auto dst_dt = unsigned_output
-                      ? paddle::framework::ToMKLDNNDataType(
-                            framework::DataTypeTrait<uint8_t>::DataType)
-                      : paddle::framework::ToMKLDNNDataType(
-                            framework::DataTypeTrait<int8_t>::DataType);
-
-    if (force_fp32_output) {
-      dst_dt = paddle::framework::ToMKLDNNDataType(
-          framework::DataTypeTrait<float>::DataType);
-    }
-
-    if (fuse_residual_conn) {
-      auto residual = ctx.Input<Tensor>("ResidualData");
-      auto residual_dt = paddle::framework::ToMKLDNNDataType(residual->type());
-      if (dst_dt != residual_dt) dst_dt = residual_dt;
-    }
 
     // Get unique name for storing MKLDNN primitives
     std::string key;
@@ -453,7 +468,7 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
       auto weights_md = platform::MKLDNNMemDesc(
           weights_tz, memory::data_type::s8, chosen_memory_format);
       auto dst_md =
-          platform::MKLDNNMemDesc(dst_tz, dst_dt, chosen_memory_format);
+          platform::MKLDNNMemDesc(dst_tz, platform::MKLDNNGetDataType<T_out>() , chosen_memory_format);
 
       handler.reset(
           new platform::ConvMKLDNNHandler(dev_ctx, mkldnn_engine, key));
@@ -509,38 +524,18 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
         if (residual_param->format() != handler->GetDstFormat()) {
           auto residual_data_tz =
               paddle::framework::vectorize2int(residual_param->dims());
-
           auto user_residual_md = platform::MKLDNNMemDesc(
               residual_data_tz, residual_dt, residual_param->format());
-
-          if (residual_dt == mkldnn::memory::data_type::u8) {
-            dst_memory_p = platform::SetDstMemory<uint8_t>(
-                ctx, output, residual_param, user_residual_md, handler,
-                &pipeline);
-          } else {
-            need_s8_to_u8 = unsigned_output;
-            dst_memory_p = platform::SetDstMemory<int8_t>(
-                ctx, output, residual_param, user_residual_md, handler,
-                &pipeline);
-          }
+          dst_memory_p = platform::SetDstMemory<T_out>(
+            ctx, output, residual_param, user_residual_md, handler,
+            &pipeline);
         } else {
           output->ShareDataWith(*residual_param);
-          if (residual_dt == mkldnn::memory::data_type::u8) {
-            dst_memory_p =
-                platform::SetDstMemory<uint8_t>(ctx, output, handler);
-          } else {
-            need_s8_to_u8 = unsigned_output;
-            dst_memory_p = platform::SetDstMemory<int8_t>(ctx, output, handler);
-          }
+          dst_memory_p = platform::SetDstMemory<T_out>(ctx, output, handler);
         }
-      } else if (!force_fp32_output) {
-        if (unsigned_output) {
-          dst_memory_p = platform::SetDstMemory<uint8_t>(ctx, output, handler);
-        } else {
-          dst_memory_p = platform::SetDstMemory<int8_t>(ctx, output, handler);
-        }
+        need_s8_to_u8 = (platform::MKLDNNGetDataType<T_out>() == memory::data_type::s8) && unsigned_output;
       } else {
-        dst_memory_p = platform::SetDstMemory<float>(ctx, output, handler);
+        dst_memory_p = platform::SetDstMemory<T_out>(ctx, output, handler);
       }
 
       // create convolution op primitive
@@ -599,29 +594,12 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
 
       if (fuse_residual_conn) {
         auto residual_param = ctx.Input<Tensor>("ResidualData");
-        auto residual_dt =
-            paddle::framework::ToMKLDNNDataType(residual_param->type());
         output->ShareDataWith(*residual_param);
-        if (residual_dt == mkldnn::memory::data_type::u8) {
-          platform::SetDstMemoryHandler<uint8_t>(ctx, output, handler,
-                                                 dst_memory_p);
-        } else {
-          need_s8_to_u8 = unsigned_output;
-          platform::SetDstMemoryHandler<int8_t>(ctx, output, handler,
-                                                dst_memory_p);
-        }
-      } else if (!force_fp32_output) {
-        if (unsigned_output) {
-          platform::SetDstMemoryHandler<uint8_t>(ctx, output, handler,
-                                                 dst_memory_p);
-        } else {
-          platform::SetDstMemoryHandler<int8_t>(ctx, output, handler,
-                                                dst_memory_p);
-        }
-      } else {
-        platform::SetDstMemoryHandler<float>(ctx, output, handler,
+        need_s8_to_u8 = (platform::MKLDNNGetDataType<T_out>() == memory::data_type::s8) && unsigned_output;
+      } 
+      platform::SetDstMemoryHandler<T_out>(ctx, output, handler,
                                              dst_memory_p);
-      }
+      
 
       if (src_memory_reorder_p) {
         pipeline.push_back(*src_memory_reorder_p);
@@ -632,16 +610,13 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
       if (residual_reorder_p) {
         pipeline.push_back(*residual_reorder_p);
       }
-
       pipeline.push_back(*conv_p);
     }
     // push primitive to stream and wait until it's executed
     stream(stream::kind::eager).submit(pipeline).wait();
-
     if (need_s8_to_u8) {
       output->mutable_data<uint8_t>(ctx.GetPlace());
     }
-
     output->set_layout(DataLayout::kMKLDNN);
     output->set_format(GetMKLDNNFormat(*dst_memory_p));
   }
