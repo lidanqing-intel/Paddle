@@ -630,11 +630,11 @@ static std::string GetHash(const mkldnn::memory::dims& input_dims,    // NOLINT
     return str;
   };
 
-  return dims2str(input_dims) + std::to_string(src_dt) + "-" +
-         std::to_string(format) + "-" + dims2str(weights_dims) +
-         std::to_string(fuse_relu) + "-" + std::to_string(fuse_brelu) + "-" +
-         std::to_string(fuse_residual_conn) + "-" + vec2str(strides) +
-         vec2str(paddings) + vec2str(dilations) + std::to_string(groups) + "-" +
+  return dims2str(input_dims) + std::to_string(src_dt) +
+         std::to_string(format) + dims2str(weights_dims) +
+         std::to_string(fuse_relu) + std::to_string(fuse_brelu) +
+         std::to_string(fuse_residual_conn) + vec2str(strides) +
+         vec2str(paddings) + vec2str(dilations) + std::to_string(groups) +
          suffix;
 }
 
