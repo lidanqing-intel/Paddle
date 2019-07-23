@@ -116,7 +116,7 @@ class ConvPrimitiveFactory {
       const Tensor* residual_param, LoDTensor* output, bool is_test,
       const ExecutionContext& ctx, bool is_int8) {
     if (conv_prim_) {
-      std::cout<<"---------------------------REUSE-------------------------------"<<std::endl;
+      if (is_int8) {std::cout<<"---------------------------REUSE-------------------------------"<<std::endl;}
       UpdateDataPointers(ctx, output, input, residual_param);
       if (is_int8 && fuse_residual_conn && (fuse_relu || fuse_brelu) &&
           platform::MKLDNNGetDataType<T_out>() == memory::data_type::s8) {
@@ -124,7 +124,7 @@ class ConvPrimitiveFactory {
       }
       return conv_prim_;
     }
-    std::cout<<"---------------------------CREATE---------------------------"<<std::endl;
+    if (is_int8) {std::cout<<"---------------------------CREATE---------------------------"<<std::endl;}
     auto weights_tz = GetWeightsTz(ctx, weights, groups, is_conv3d);
     auto weights_format =
         GetWeightsFormat(weights->format(), groups, is_conv3d, is_int8);
@@ -706,7 +706,7 @@ class ConvMKLDNNOpKernel : public framework::OpKernel<T_in> {
                    fuse_residual_conn, residual_param);
 
     std::shared_ptr<mkldnn::convolution_forward> conv_p;
-    std::cout<<"key"<<key<<std::endl;
+    //std::cout<<"key"<<key<<std::endl;
     if (dst_typename == mkldnn::memory::data_type::f32) {
       conv_p =
           GetConvPrimitiveFactory<T_in, T_w, float>(dev_ctx, key, mkldnn_engine)
