@@ -28,6 +28,8 @@ class TestTransposeOp(OpTest):
         self.use_mkldnn = True
         self.axis = (0, 2, 3, 1)
 
+        print("INT8 test is tested now at setUp")
+
         self.inputs = {
             'X': format_reorder(self.input_data, self.shape)
         }  #transform data format to 'NHWC' for INT8 transpose specially.
@@ -63,6 +65,7 @@ class TestINT8Case(TestTransposeOp):
     def initInputData(self):
         self.input_data = (
             np.random.randint(0, 100, self.shape) - 50).astype('int8')
+        self.assertLessEqual(2, 1, "Here is where the debug stop")
 
 
 class TestUINT8Case(TestTransposeOp):
@@ -72,6 +75,7 @@ class TestUINT8Case(TestTransposeOp):
     def initDataType(self):
         self.input_data = (np.random.randint(0, 100,
                                              self.shape)).astype('uint8')
+        print("transpose_int8_mkldnn now init UINT8 input")
 
 
 if __name__ == '__main__':

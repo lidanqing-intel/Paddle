@@ -106,6 +106,12 @@ class ConvTransposeMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
       return reordered_filter_data;
     };
 
+    std::cout << "original weights_tz is found and g is " << weights_tz[0]
+              << weights_tz[1] << weights_tz[2] << weights_tz[3] << std::endl;
+    PADDLE_ENFORCE(
+        weights_tz.size() == 10,
+        "This function throw the error and this function get into the branch");
+
     int g = std::max(groups, 1);
     if (g > 1) {
       int o = weights_tz[0];
@@ -113,6 +119,16 @@ class ConvTransposeMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
       int h = weights_tz[2];
       int w = weights_tz[3];
       weights_tz.resize(5);
+      //   weights_tz.push_back(0);
+      //   std::rotate(weights_tz.begin(), weights_tz.end() - 1,
+      //   weights_tz.end());
+      //   weights_tz[0] = g;
+      //   weights_tz[1] = weights_tz[1] / g;
+      std::cout << "original weights_tz is found and g is " << o << i << h << w
+                << g << std::endl;
+      PADDLE_ENFORCE(weights_tz.size() == 10,
+                     "This function throw the error and this function get into "
+                     "the branch");
       weights_tz[0] = g;
       weights_tz[1] = o / g;
       weights_tz[2] = i;

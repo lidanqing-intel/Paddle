@@ -19,7 +19,7 @@ import numpy as np
 import paddle.fluid.core as core
 from paddle.fluid.tests.unittests.op_test import OpTest
 
-from paddle.fluid.tests.unittests.test_conv2d_transpose_op import conv2dtranspose_forward_naive, TestConv2dTransposeOp
+from paddle.fluid.tests.unittests.test_conv2d_transpose_op import TestConv2dTransposeOp
 
 
 def conv2d_bias_naive(out, bias):
@@ -61,7 +61,6 @@ class TestConv2dTransposeMKLDNNOp(TestConv2dTransposeOp):
 
     def setUp(self):
         TestConv2dTransposeOp.setUp(self)
-
         output = self.outputs['Output']
 
         if self.fuse_bias and self.bias_size is not None:
@@ -76,7 +75,6 @@ class TestConv2dTransposeMKLDNNOp(TestConv2dTransposeOp):
 
         self.attrs['fuse_bias'] = self.fuse_bias
         self.attrs['fuse_relu'] = self.fuse_relu
-
         self.outputs['Output'] = output
 
 
@@ -101,3 +99,19 @@ class TestMKLDNNWithStride(TestConv2dTransposeMKLDNNOp):
         self.pad = [1, 1]
         self.stride = [2, 2]
         self.input_size = [2, 3, 6, 6]  # NCHW
+
+
+class TestMKLDNNWithGroups(TestConv2dTransposeMKLDNNOp):
+    def init_test_case(self):
+        TestConv2dTransposeMKLDNNOp.init_test_case(self)
+        # self.pad = [1, 1]
+        # self.groups = 2
+        # self.input_size = [2, 3, 5, 5]  # NCHW
+        # f_c = self.input_size[1]
+        # self.filter_size = [f_c, 4, 3, 3]
+        self.pad = [0, 0]
+        self.input_size = [2, 3, 5, 5]  # NCHW
+        assert np.mod(self.input_size[1], self.groups) == 0
+        f_c = self.input_size[1] // self.groups
+        self.filter_size = [f_c, 6, 3, 3]
+        self.groups = 3
