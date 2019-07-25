@@ -38,6 +38,10 @@ class TransposeMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
     auto* output = ctx.Output<Tensor>("Out");
     const T* input_data = input->data<T>();
 
+    PADDLE_ENFORCE(
+        ndims.size() == 10,
+        "This function throw the error and this function get into the branch");
+
     if (ndims == 1) {
       output->ShareDataWith(*input);
       return;

@@ -81,7 +81,7 @@ class ConvTransposeMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
     std::vector<int> iohw_weights_tz =
         paddle::framework::vectorize2int(filter->dims());
     std::vector<int> weights_tz = iohw_weights_tz;
-    // IOHW -> OIHW
+    // IOHW -> OIHW // OIHW is 6333
     weights_tz[0] = iohw_weights_tz[1];
     weights_tz[1] = iohw_weights_tz[0];
 
@@ -113,28 +113,34 @@ class ConvTransposeMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
         "This function throw the error and this function get into the branch");
 
     int g = std::max(groups, 1);
-    if (g > 1) {
-      int o = weights_tz[0];
-      int i = weights_tz[1];
-      int h = weights_tz[2];
-      int w = weights_tz[3];
-      weights_tz.resize(5);
-      //   weights_tz.push_back(0);
-      //   std::rotate(weights_tz.begin(), weights_tz.end() - 1,
-      //   weights_tz.end());
-      //   weights_tz[0] = g;
-      //   weights_tz[1] = weights_tz[1] / g;
-      std::cout << "original weights_tz is found and g is " << o << i << h << w
-                << g << std::endl;
-      PADDLE_ENFORCE(weights_tz.size() == 10,
-                     "This function throw the error and this function get into "
-                     "the branch");
-      weights_tz[0] = g;
-      weights_tz[1] = o / g;
-      weights_tz[2] = i;
-      weights_tz[3] = h;
-      weights_tz[4] = w;
-    }
+    // Do not delete the if (g > 1) branch. Because this parted is not supported
+    // yet. But it is low priority because no models until now use
+    // conv_transpose with group>1 op. It is implemented underneath with
+    // deconvolution
+    // if (g > 1) {
+    //   int o = weights_tz[0];
+    //   int i = weights_tz[1];
+    //   int h = weights_tz[2];
+    //   int w = weights_tz[3];
+    //   weights_tz.resize(5);
+    //   //   weights_tz.push_back(0);
+    //   //   std::rotate(weights_tz.begin(), weights_tz.end() - 1,
+    //   //   weights_tz.end());
+    //   //   weights_tz[0] = g;
+    //   //   weights_tz[1] = weights_tz[1] / g;
+    //   std::cout << "original weights_tz is found and g is " << o << i << h <<
+    //   w
+    //             << g << std::endl;
+    //   PADDLE_ENFORCE(weights_tz.size() == 10,
+    //                  "This function throw the error and this function get
+    //                  into "
+    //                  "the branch");
+    //   weights_tz[0] = g;
+    //   weights_tz[1] = o / g;
+    //   weights_tz[2] = i;
+    //   weights_tz[3] = h;
+    //   weights_tz[4] = w;
+    // }
     std::vector<int> dst_tz = paddle::framework::vectorize2int(output->dims());
 
     // Get unique name for storing MKLDNN primitives
