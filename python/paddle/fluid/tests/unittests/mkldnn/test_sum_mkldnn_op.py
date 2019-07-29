@@ -16,26 +16,30 @@ from __future__ import print_function
 
 import unittest
 
-from paddle.fluid.tests.unittests.test_sum_op import TestSumOp
-
+from paddle.fluid.tests.unittests.test_sum_op import TestSumOp, TestSelectedRowsSumOp, TestLoDTensorAndSelectedRowsOp
+import paddle.fluid.core as core
 
 class TestMKLDNN(TestSumOp):
     def init_kernel_type(self):
         self.use_mkldnn = True
 
-class TestMKLDNNSelectedRowsSumOp(OpTest):
+class TestMKLDNNSelectedRowsSumOp(TestSelectedRowsSumOp):
     def init_kernel_type(self):
         self.use_mkldnn = True
 
-class TestMKLDNNLoDTensorAndSelectedRowsOp(TestSelectedRowsSumOp):
+class TestMKLDNNLoDTensorAndSelectedRowsOp(TestLoDTensorAndSelectedRowsOp):
     def init_kernel_type(self):
         self.use_mkldnn = True
 
-class TestMKLDNNWithInplace(TestSelectedRowsSumOp):
-    def check_with_place(self):
-        self.check_input_and_optput(core.Scope(), core.CPUPlace(), True, True, False,
-                                    False)
-    
+class TestWithInplace(TestSelectedRowsSumOp):
+   
+    def test_w_is_selected_rows(self):
+        places = [core.CPUPlace()]
+        # if core.is_compiled_with_cuda():
+        #     places.append(core.CUDAPlace(0))
+        for place in places:
+            for inplace in [True]:
+                self.check_with_place(place, inplace)
 
     def init_kernel_type(self):
         self.use_mkldnn = True

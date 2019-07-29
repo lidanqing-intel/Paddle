@@ -63,7 +63,7 @@ class TestSelectedRowsSumOp(OpTest):
                                     True)
         self.check_input_and_optput(core.Scope(), place, inplace, False, False,
                                     True)
-        self.check_input_and_optput(core.Scope(), place, inplace, False, False,
+        self.check_input_and_optput(core.Scope(), place, inplace, True, False,
                                     False)
 
     def init_kernel_type(self):
@@ -139,13 +139,6 @@ class TestSelectedRowsSumOp(OpTest):
                 self.check_with_place(place, inplace)
 
 
-
-class TestWithInplace(TestSelectedRowsSumOp):
-    def check_with_place(self):
-        self.check_input_and_optput(core.Scope(), core.CPUPlace(), True, True, False,
-                                    False)
-    def init_kernel_type(self):
-        pass
 
 class TestLoDTensorAndSelectedRowsOp(TestSelectedRowsSumOp):
     def setUp(self):
