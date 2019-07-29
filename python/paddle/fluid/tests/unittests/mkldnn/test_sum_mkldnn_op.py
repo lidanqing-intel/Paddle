@@ -15,34 +15,57 @@
 from __future__ import print_function
 
 import unittest
-
+import numpy as np
 from paddle.fluid.tests.unittests.test_sum_op import TestSumOp, TestSelectedRowsSumOp, TestLoDTensorAndSelectedRowsOp
 import paddle.fluid.core as core
 
 class TestMKLDNN(TestSumOp):
     def init_kernel_type(self):
         self.use_mkldnn = True
+        self.attrs = {'_cpu_only': True}
+
+class TestMKLDNNInplaceSumOp(TestSumOp):
+    def setUp(self):
+        self.op_type = "sum"
+        self.init_kernel_type()
+        self.use_mkldnn = False
+        self.init_kernel_type()
+        x0 = np.random.random((3, 4)).astype(self.dtype)
+        print("Start")
+        print(id(x0))
+        xtemp = [x0] # Here when you add xtemp, it is a new variable. print(id(x0))
+        self.inputs = {"X": xtemp}
+        self.outputs = {"Out": x0 }
+        print(id(x0))
+        print("End")
+        self.attrs = {'use_mkldnn': self.use_mkldnn}
+
+    def init_kernel_type(self):
+        self.use_mkldnn = True
 
 class TestMKLDNNSelectedRowsSumOp(TestSelectedRowsSumOp):
     def init_kernel_type(self):
         self.use_mkldnn = True
+        self.attrs = {'_cpu_only': True}
 
-class TestMKLDNNLoDTensorAndSelectedRowsOp(TestLoDTensorAndSelectedRowsOp):
-    def init_kernel_type(self):
-        self.use_mkldnn = True
+# class TestMKLDNNLoDTensorAndSelectedRowsOp(TestLoDTensorAndSelectedRowsOp):
+#     def init_kernel_type(self):
+#         self.use_mkldnn = True
+#          self.attrs = {'_cpu_only': True}
 
-class TestWithInplace(TestSelectedRowsSumOp):
+# class TestWithInplace(TestSelectedRowsSumOp):
    
-    def test_w_is_selected_rows(self):
-        places = [core.CPUPlace()]
-        # if core.is_compiled_with_cuda():
-        #     places.append(core.CUDAPlace(0))
-        for place in places:
-            for inplace in [True]:
-                self.check_with_place(place, inplace)
+#     def test_w_is_selected_rows(self):
+#         places = [core.CPUPlace()]
+#         # if core.is_compiled_with_cuda():
+#         #     places.append(core.CUDAPlace(0))
+#         for place in places:
+#             for inplace in [True]:
+#                 self.check_with_place(place, inplace)
 
-    def init_kernel_type(self):
-        self.use_mkldnn = True
+#     def init_kernel_type(self):
+#         self.use_mkldnn = True
+#         self.attrs = {'_cpu_only': True}
 
 if __name__ == '__main__':
     unittest.main()

@@ -55,6 +55,8 @@ class TestSelectedRowsSumOp(OpTest):
         self.rows = [0, 1, 2, 3, 4, 5, 6]
         self.dtype = np.float32
         self.init_kernel_type()
+        self.test_w_is_selected_rows()
+        
 
     def check_with_place(self, place, inplace):
         self.check_input_and_optput(core.Scope(), place, inplace, True, True,
@@ -82,7 +84,7 @@ class TestSelectedRowsSumOp(OpTest):
                                w1_has_data=False,
                                w2_has_data=False,
                                w3_has_data=False):
-
+        # print(inplace)
         self.create_selected_rows(scope, place, "W1", w1_has_data)
         self.create_selected_rows(scope, place, "W2", w2_has_data)
         self.create_selected_rows(scope, place, "W3", w3_has_data)
@@ -135,8 +137,11 @@ class TestSelectedRowsSumOp(OpTest):
         if core.is_compiled_with_cuda():
             places.append(core.CUDAPlace(0))
         for place in places:
-            for inplace in [True, False]:
+            for inplace in [True]:
                 self.check_with_place(place, inplace)
+
+    # def test_check_output(self):
+    #     self.test_w_is_selected_rows(self)
 
 
 

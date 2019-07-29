@@ -58,6 +58,8 @@ class SumMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
     const int N = in_vars.size();
     auto out_var = ctx.OutputVar("Out");
     bool in_place = out_var == in_vars[0];
+    std::cout << "------------------------------out_var " << out_var <<",in_vars[0] "<<in_vars[0] << std::endl;
+    std::cout << "------------------------------in_place " << in_place << std::endl;
 
     if (out_var->IsType<framework::LoDTensor>()) {
       LoDTensor* output = ctx.Output<LoDTensor>("Out");
