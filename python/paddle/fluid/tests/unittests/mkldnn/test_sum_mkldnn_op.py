@@ -23,6 +23,22 @@ class TestMKLDNN(TestSumOp):
     def init_kernel_type(self):
         self.use_mkldnn = True
 
+class TestMKLDNNSelectedRowsSumOp(OpTest):
+    def init_kernel_type(self):
+        self.use_mkldnn = True
+
+class TestMKLDNNLoDTensorAndSelectedRowsOp(TestSelectedRowsSumOp):
+    def init_kernel_type(self):
+        self.use_mkldnn = True
+
+class TestMKLDNNWithInplace(TestSelectedRowsSumOp):
+    def check_with_place(self):
+        self.check_input_and_optput(core.Scope(), core.CPUPlace(), True, True, False,
+                                    False)
+    
+
+    def init_kernel_type(self):
+        self.use_mkldnn = True
 
 if __name__ == '__main__':
     unittest.main()
