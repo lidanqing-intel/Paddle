@@ -31,10 +31,15 @@ class TestMKLDNNInplaceSumOp(TestSumOp):
         self.use_mkldnn = False
         self.init_kernel_type()
         x0 = np.random.random((3, 4)).astype(self.dtype)
+        
+        #self.inputs = {"X": [("x0", x0), ("x1", x1), ("x2", x2)]}
+        #y = x0 + x1 + x2
+        #self.outputs = {'Out': y}
+        
         print("Start")
         print(id(x0))
-        xtemp = [x0] # Here when you add xtemp, it is a new variable. print(id(x0))
-        self.inputs = {"X": xtemp}
+        # xtemp = [x0] # Here when you add xtemp, it is a new variable. print(id(x0))
+        self.inputs = {"X": [("x0", x0)]}
         self.outputs = {"Out": x0 }
         print(id(x0))
         print("End")
