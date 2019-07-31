@@ -17,6 +17,7 @@ limitations under the License. */
 #include "paddle/fluid/inference/api/paddle_analysis_config.h"
 #include "paddle/fluid/inference/tests/api/tester_helper.h"
 
+// setting iterations to 0 means processing the whole dataset
 namespace paddle {
 namespace inference {
 namespace analysis {
@@ -273,8 +274,16 @@ TEST(Analyzer_int8_mobilenet_ssd, quantization) {
   q_cfg.mkldnn_quantizer_config()->SetWarmupData(warmup_data);
   q_cfg.mkldnn_quantizer_config()->SetWarmupBatchSize(FLAGS_warmup_batch_size);
 
-  int test_top5 = 2;
-  CompareQuantizedAndAnalysis(&cfg, &q_cfg, input_slots_all, test_top5);
+  std::map<std::string, int> chosen_acc = {
+      {"top1", 1}, {"top5", 2}, {"avg_cost", 0}};
+  // insert elements in random order
+  // chosen_acc.insert(pair<std::string,int>("top1", 1));
+  // chosen_acc.insert(pair<std::string,int>("top5", 2));
+  // chosen_acc.insert(pair<std::string,int>("avg_cost", 0));
+
+  // int test_top5 = 2; // 0 is avg_cose, 1 is top1_acc, 2 is top5_acc or mAP
+  CompareQuantizedAndAnalysis(&cfg, &q_cfg, input_slots_all,
+                              chosen_acc.find("top5")->second);
 }
 
 }  // namespace analysis

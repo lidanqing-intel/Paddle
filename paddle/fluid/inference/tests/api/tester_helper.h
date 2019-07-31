@@ -42,7 +42,7 @@ DEFINE_string(infer_model, "", "model path");
 DEFINE_string(infer_data, "", "data file");
 DEFINE_string(refer_result, "", "reference result for comparison");
 DEFINE_int32(batch_size, 1, "batch size");
-DEFINE_int32(warmup_batch_size, 100, "batch size for quantization warmup");
+DEFINE_int32(warmup_batch_size, 9, "batch size for quantization warmup");
 // setting iterations to 0 means processing the whole dataset
 DEFINE_int32(iterations, 0, "number of batches to process");
 DEFINE_int32(repeat, 1, "Running the inference program repeat times.");
@@ -443,15 +443,21 @@ void TestPrediction(const PaddlePredictor::Config *config,
   }
 }
 
-void SummarizeAccuracy(float avg_acc1_fp32, float avg_acc1_int8) {
+void SummarizeAccuracy(float avg_acc_fp32, float avg_acc_int8,
+                       int compared_idx) {
+  PADDLE_ENFORCE(compared_idx <= 2 && compared_idx >= 1,
+                 "Compare either top1 accuracy either mAP(top5), the "
+                 "compared_idx is out of range");
+  std::string prefix = (compared_idx == 1) ? "top1_accuracy " : "mAP ";
   LOG(INFO) << "--- Accuracy summary --- ";
-  LOG(INFO) << "Accepted top1 accuracy drop threshold: "
-            << FLAGS_quantized_accuracy
-            << ". (condition: (FP32_top1_acc - INT8_top1_acc) <= threshold)";
-  LOG(INFO) << "FP32: avg top1 accuracy: " << std::fixed << std::setw(6)
-            << std::setprecision(4) << avg_acc1_fp32;
-  LOG(INFO) << "INT8: avg top1 accuracy: " << std::fixed << std::setw(6)
-            << std::setprecision(4) << avg_acc1_int8;
+  LOG(INFO) << "Accepted " << prefix
+            << "drop threshold: " << FLAGS_quantized_accuracy
+            << ". (condition: (FP32_" << prefix << " - INT8_" << prefix
+            << ") <= threshold)";
+  LOG(INFO) << "FP32: avg " << prefix << std::fixed << std::setw(6)
+            << std::setprecision(4) << avg_acc_fp32;
+  LOG(INFO) << "INT8: avg " << prefix << std::fixed << std::setw(6)
+            << std::setprecision(4) << avg_acc_int8;
 }
 
 void SummarizePerformance(float sample_latency_fp32,
@@ -481,9 +487,6 @@ void CompareAccuracy(
   for (size_t i = 0; i < output_slots_quant.size(); ++i) {
     PADDLE_ENFORCE(output_slots_quant[i].size() >= 2UL);
     PADDLE_ENFORCE(output_slots_ref[i].size() >= 2UL);
-    std::string prefix = compared_idx == 1
-                             ? "Top1 accuracy"
-                             : "Top5 accuracy or accumulative mAP";
     if (output_slots_quant[i][compared_idx].lod.size() > 0 ||
         output_slots_ref[i][compared_idx].lod.size() > 0)
       throw std::invalid_argument("CompareAccuracy: output has nonempty LoD.");
@@ -500,7 +503,7 @@ void CompareAccuracy(
   float avg_acc_quant = total_accs_quant / output_slots_quant.size();
   float avg_acc_ref = total_accs_ref / output_slots_ref.size();
 
-  SummarizeAccuracy(avg_acc_ref, avg_acc_quant);
+  SummarizeAccuracy(avg_acc_ref, avg_acc_quant, compared_idx);
   CHECK_GT(avg_acc_ref, 0.0);
   CHECK_GT(avg_acc_quant, 0.0);
   CHECK_LE(avg_acc_ref - avg_acc_quant, FLAGS_quantized_accuracy);
