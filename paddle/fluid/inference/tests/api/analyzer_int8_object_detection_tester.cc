@@ -273,7 +273,8 @@ TEST(Analyzer_int8_mobilenet_ssd, quantization) {
   q_cfg.mkldnn_quantizer_config()->SetWarmupData(warmup_data);
   q_cfg.mkldnn_quantizer_config()->SetWarmupBatchSize(FLAGS_warmup_batch_size);
 
-  CompareQuantizedAndAnalysis(&cfg, &q_cfg, input_slots_all);
+  int test_top5 = 2;
+  CompareQuantizedAndAnalysis(&cfg, &q_cfg, input_slots_all, test_top5);
 }
 
 }  // namespace analysis
