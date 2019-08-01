@@ -371,6 +371,11 @@ class TestBatchNormOpTraining(unittest.TestCase):
                 shape, data_layout)
 
             var_dict = locals()
+            var_names_1 = list(var_dict.keys())
+            print(var_names_1)
+            # ['shape', 'bias', 'x_grad', 'y_grad', 'scale', 'self', 'scale_grad', 'scale_shape', 
+            # 'momentum', 'bias_grad', 'variance_out', 'epsilon', 'saved_mean', 'variance', 'c', 'saved_variance', 
+            # 'h', 'n', 'mean_out', 'place', 'data_layout', 'w', 'y', 'x', 'mean']
             var_dict['y@GRAD'] = y_grad
             var_dict['x@GRAD'] = x_grad
             var_dict['scale@GRAD'] = scale_grad
@@ -441,6 +446,17 @@ class TestBatchNormOpTraining(unittest.TestCase):
                     },
                     fetch_list=self.fetch_list)
 
+                out = exe.run(
+                    program,
+                    feed={
+                        name: var_dict[name]
+                        for name in
+                        ['x', 'scale', 'bias', 'mean', 'variance', 'y@GRAD']
+                    },
+                    fetch_list=self.fetch_list)
+
+                
+                
             for id, name in enumerate(self.fetch_list):
                 self.__assert_close(var_dict[name], out[id], name)
             print("op test forward passed: ", str(place), data_layout)

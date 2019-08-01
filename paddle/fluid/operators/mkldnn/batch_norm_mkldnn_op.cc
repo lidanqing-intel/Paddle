@@ -477,6 +477,7 @@ class BatchNormMKLDNNGradOpKernel : public paddle::framework::OpKernel<T> {
                              .data.format);
     } else {
       // primitives already exist
+      std::cout<<"Batch norm exists and Now it successfully reuse the primitive"<<std::endl;
       UpdateMemoryData(dev_ctx, key_batch_norm_src_mem_p, to_void_cast(x_data));
       UpdateMemoryData(dev_ctx, key_batch_norm_mean_mem_p,
                        to_void_cast(batch_mean_data));
