@@ -62,7 +62,7 @@ def check_if_mkldnn_primitives_exist_in_bwd(test_case, op_type, x, out,
         exe = fluid.Executor(place)
 
         # Do at least 2 iterations
-        for i in range(1):
+        for i in range(2):
             out = exe.run(
                 program,
                 feed={name: var_dict[name]
