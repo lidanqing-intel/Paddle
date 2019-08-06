@@ -16,7 +16,12 @@ from __future__ import print_function
 
 import unittest
 
+# from paddle.fluid.tests.unittests.test_sum_op import TestSumOp
+import numpy as np
+import paddle.fluid.core as core
 from paddle.fluid.tests.unittests.test_sum_op import TestSumOp
+from paddle.fluid.tests.unittests.op_test import OpTest
+from paddle.fluid.op import Operator
 
 
 class TestMKLDNN(TestSumOp):
