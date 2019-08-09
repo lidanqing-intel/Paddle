@@ -111,6 +111,7 @@ def append_input_output(block, op_proto, np_list, is_input, dtype):
             # inferece the dtype from numpy value.
             np_value = np_list[name]
             if isinstance(np_value, tuple):
+                # print()
                 dtype = np_value[0].dtype
                 # output shape, lod should be infered from input.
                 if is_input:

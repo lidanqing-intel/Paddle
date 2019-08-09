@@ -165,7 +165,8 @@ def create_op_creation_method(op_proto):
 
     def __impl__(*args, **kwargs):
         opdesc = method(*args, **kwargs)
-        return core.Operator.create(opdesc.SerializeToString())
+        return core.Operator.create(
+            opdesc.SerializeToString())  #Here actually attr is not defined
 
     return OpInfo(
         method=__impl__,
@@ -184,6 +185,10 @@ class OperatorFactory(object):
             self.op_methods[method.name] = method
 
     def __call__(self, *args, **kwargs):
+        print(
+            "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!kwargs!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+        )
+        print(kwargs)
         if "type" in kwargs:
             if len(args) != 0:
                 raise ValueError(

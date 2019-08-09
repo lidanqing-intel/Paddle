@@ -51,6 +51,9 @@ void BatchNormOp::InferShape(framework::InferShapeContext *ctx) const {
   // make sure Mean/MeanOut and Variance/VarianceOut share memory in Python
   PADDLE_ENFORCE_EQ(ctx->Inputs("Mean")[0], ctx->Outputs("MeanOut")[0],
                     "Mean and MeanOut should share the same memory");
+  if (ctx->Inputs("Mean")[0] == ctx->Outputs("MeanOut")[0]) {
+    std::cout << "BatchNormOp inplace is true" << std::endl;
+  }
   PADDLE_ENFORCE_EQ(ctx->Inputs("Variance")[0], ctx->Outputs("VarianceOut")[0],
                     "Variance and VarianceOut should share the same memory");
 

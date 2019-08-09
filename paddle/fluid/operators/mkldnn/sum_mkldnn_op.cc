@@ -58,7 +58,9 @@ class SumMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
     const int N = in_vars.size();
     auto out_var = ctx.OutputVar("Out");
     bool in_place = out_var == in_vars[0];
-
+    std::cout
+        << "!!!!ATTENTION IN SUM_MKLDNN_OP CC CODE!!!!!!!  in_place valuse is "
+        << in_place << std::endl;
     if (out_var->IsType<framework::LoDTensor>()) {
       LoDTensor* output = ctx.Output<LoDTensor>("Out");
       T* output_data = output->mutable_data<T>(ctx.GetPlace());
@@ -146,8 +148,19 @@ class SumMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
   }
 };
 
+// class SumMKLDNNInplace : public framework::InplaceOpInference {
+//  public:
+//   std::unordered_map<std::string, std::string> operator()(
+//       const framework::OpDesc& op_desc, bool use_cuda) const override {
+//     return {{"X", "Out"}};
+//   }
+// };
+
 }  // namespace operators
 }  // namespace paddle
 
 REGISTER_OP_KERNEL(sum, MKLDNN, ::paddle::platform::CPUPlace,
                    paddle::operators::SumMKLDNNOpKernel<float>);
+
+// REGISTER_OP_KERNEL(sum, MKLDNN, ::paddle::platform::CPUPlace,
+//                    paddle::operators::SumMKLDNNInplace);

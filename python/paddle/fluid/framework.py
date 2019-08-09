@@ -1771,6 +1771,8 @@ class Block(object):
                                        kwargs.get("stop_gradient", False))
         else:
             op_desc = self.desc.append_op()
+            print("EMPHASISED", kwargs.get("attrs", None))
+            #kwargs.get("attrs", None) has correct print EMPHASISED {'use_mkldnn': True}
             op = Operator(
                 block=self,
                 desc=op_desc,

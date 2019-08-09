@@ -226,7 +226,9 @@ class OpTest(unittest.TestCase):
                     persistable=True,
                     type=core.VarDesc.VarType.RAW,
                     stop_gradient=True)
-
+        print(self.op_type)
+        print(inputs)
+        print(outputs)
         op = block.append_op(
             type=self.op_type,
             inputs=inputs,
@@ -235,6 +237,7 @@ class OpTest(unittest.TestCase):
         # infer variable type and infer shape in compile-time
         op.desc.infer_var_type(block.desc)
         op.desc.infer_shape(block.desc)
+        print(op)
 
     def _get_io_vars(self, block, numpy_inputs):
         inputs = {}
