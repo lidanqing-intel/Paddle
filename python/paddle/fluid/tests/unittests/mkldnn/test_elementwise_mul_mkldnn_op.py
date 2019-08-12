@@ -35,7 +35,7 @@ class TestElementwiseMulMKLDNNOp_BroadcastNCHW16c(ElementwiseMulOp):
         self.pad = [0, 0]
         self.stride = [1, 1]
         self.groups = 1
-        self.input_size = [1, 3, 4, 4]  # NCHW
+        self.input_size = [1, 3, 5, 5]  # NCHW
         self.filter_size = [16, 3, 3, 3]
         self.dilations = False
         self.use_cudnn = False
@@ -43,9 +43,9 @@ class TestElementwiseMulMKLDNNOp_BroadcastNCHW16c(ElementwiseMulOp):
         self.fuse_relu_before_depthwise_conv = False
         self.fuse_relu_before_depthwise_conv = False
         self.exhaustive_search = False
-        self.input = np.random.rand(1, 3, 4, 4).astype(self.dtype)
-        self.filter = np.random.rand(16, 3, 3, 3).astype(self.dtype)
-
+        input = np.random.random(self.input_size).astype(self.dtype)
+        filter = np.random.random(self.filter_size).astype(self.dtype)
+        print(input)
         conv2d_param = {
             'stride': self.stride,
             'pad': self.pad,
@@ -53,10 +53,11 @@ class TestElementwiseMulMKLDNNOp_BroadcastNCHW16c(ElementwiseMulOp):
         }
 
         conv_out, _, _, _, _ = conv2d_forward_naive(
-            self.input, self.filter, self.groups, conv2d_param)  #[1, 16, 2, 2]
+            input, filter, self.groups, conv2d_param)  #[1, 16, 2, 2]
         self.conv_output = conv_out
         self.elt_mul_y_size = [1, 16, 1, 1]
-        self.elt_mul_y = np.random.rand(1, 16, 1, 1).astype(self.dtype)
+        self.elt_mul_y = np.random.random(self.elt_mul_y_size).astype(
+            self.dtype)
         self.elt_mul_output = self.conv_output * self.elt_mul_y  # the result dimension is 1*16*2*2
 
         self.fetch_list = ["conv_output", "elt_mul_output"]
@@ -70,8 +71,8 @@ class TestElementwiseMulMKLDNNOp_BroadcastNCHW16c(ElementwiseMulOp):
     def test_check_output(self):
         print("SHOCK!!! THIS HAS TO BE SHOWN UP")
         ground_truth = {
-            "input": self.input,
-            "filter": self.filter,
+            "input": input,
+            "filter": filter,
             "conv_output": self.conv_output,
             "elt_mul_y": self.elt_mul_y,
             "elt_mul_output": self.elt_mul_output
