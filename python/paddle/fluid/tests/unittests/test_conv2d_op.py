@@ -27,7 +27,7 @@ def conv2d_forward_naive(input, filter, group, conv_param):
     assert f_c * group == in_c
     assert np.mod(out_c, group) == 0
     sub_out_c = out_c // group
-
+    print(conv_param)
     stride, pad, dilation = conv_param['stride'], conv_param['pad'], conv_param[
         'dilation']
     out_h = 1 + (in_h + 2 * pad[0] - (dilation[0] * (f_h - 1) + 1)) // stride[0]

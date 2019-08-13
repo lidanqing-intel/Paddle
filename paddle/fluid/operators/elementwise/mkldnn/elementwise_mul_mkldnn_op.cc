@@ -88,6 +88,15 @@ class ElementwiseMulMKLDNNKernel : public framework::OpKernel<T> {
     const bool are_dims_divisable = !(x_int_dims[1] % 16);
     const bool is_x_format_correct = x->format() == memory::format::nChw16c;
     const bool is_y_format_correct = y->format() == memory::format::nc;
+
+    std::cout << "START:" << std::endl
+              << "is_x_format_correct:" << x->format() << is_x_format_correct
+              << std::endl;
+    std::cout << "is_y_format_correct" << y->format() << is_y_format_correct
+              << std::endl;
+    std::cout << "are_dims_divisable" << are_dims_divisable << std::endl;
+    std::cout << "is_avx512_enabled" << is_avx512_enabled << std::endl
+              << "END!" << std::endl;
     if (is_x_format_correct && is_y_format_correct && are_dims_divisable &&
         is_avx512_enabled) {
       int pre, n, post;
