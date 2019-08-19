@@ -29,35 +29,43 @@ using mkldnn::stream;
 using platform::to_void_cast;
 using platform::GetMKLDNNFormat;
 
-inline void GetWeightsTz(std::vector<int>& weights_tz, int groups,  // NOLINT
-                         bool is_conv3d) {
+inline void GetWeightsTz(std::vector<int>& weights_tz, int groups) {  // NOLINT
   if (groups > 1) {
-    if (is_conv3d) {
-      int output = weights_tz[0];
-      int input = weights_tz[1];
-      int dimension = weights_tz[2];
-      int height = weights_tz[3];
-      int width = weights_tz[4];
-      weights_tz.resize(6);
-      weights_tz[0] = groups;
-      weights_tz[1] = output / groups;
-      weights_tz[2] = input;
-      weights_tz[3] = dimension;
-      weights_tz[4] = height;
-      weights_tz[5] = width;
-    } else {
-      int output = weights_tz[0];
-      int input = weights_tz[1];
-      int height = weights_tz[2];
-      int width = weights_tz[3];
-      weights_tz.resize(5);
-      weights_tz[0] = groups;
-      weights_tz[1] = output / groups;
-      weights_tz[2] = input;
-      weights_tz[3] = height;
-      weights_tz[4] = width;
-    }
+    // is_conv3d = true, [out_n, in_n, c, h, w] to [g, out_n/g, in_n, c, h, w]
+    // is_conv3d = false, [out_n, in_n, h, w] to [g, out_n/g, in_n, h, w]
+    weights_tz.push_back(0);
+    std::rotate(weights_tz.begin(), weights_tz.end() - 1, weights_tz.end());
+    weights_tz[0] = groups;
+    weights_tz[1] = weights_tz[1] / groups;
   }
+  //   return weights_tz;
+  //   if (groups > 1) {
+  //     if (is_conv3d) {
+  //       int output = weights_tz[0];
+  //       int input = weights_tz[1];
+  //       int dimension = weights_tz[2];
+  //       int height = weights_tz[3];
+  //       int width = weights_tz[4];
+  //       weights_tz.resize(6);
+  //       weights_tz[0] = groups;
+  //       weights_tz[1] = output / groups;
+  //       weights_tz[2] = input;
+  //       weights_tz[3] = dimension;
+  //       weights_tz[4] = height;
+  //       weights_tz[5] = width;
+  //     } else {
+  //       int output = weights_tz[0];
+  //       int input = weights_tz[1];
+  //       int height = weights_tz[2];
+  //       int width = weights_tz[3];
+  //       weights_tz.resize(5);
+  //       weights_tz[0] = groups;
+  //       weights_tz[1] = output / groups;
+  //       weights_tz[2] = input;
+  //       weights_tz[3] = height;
+  //       weights_tz[4] = width;
+  //     }
+  //   }
 }
 
 inline mkldnn::memory::format GetWeightsFormat(mkldnn::memory::format format,
@@ -172,7 +180,7 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
     std::vector<int> weights_tz =
         paddle::framework::vectorize2int(filter->dims());
     int g = std::max(groups, 1);
-    GetWeightsTz(weights_tz, g, is_conv3d);
+    GetWeightsTz(weights_tz, g);
     std::vector<int> dst_tz = paddle::framework::vectorize2int(output->dims());
 
     // Get unique name for storing MKLDNN primitives
@@ -380,8 +388,7 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
     std::vector<int> weights_tz =
         paddle::framework::vectorize2int(filter->dims());
     int g = std::max(groups, 1);
-
-    GetWeightsTz(weights_tz, g, is_conv3d);
+    GetWeightsTz(weights_tz, g);
     std::vector<int> dst_tz = paddle::framework::vectorize2int(output->dims());
 
     mkldnn::memory::data_type src_dt =
@@ -492,7 +499,6 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
 
       auto propagation = is_test ? mkldnn::prop_kind::forward_scoring
                                  : mkldnn::prop_kind::forward_training;
-
       if (bias) {
         bias_tz = paddle::framework::vectorize2int(bias->dims());
         auto bias_md = platform::MKLDNNMemDesc(bias_tz, memory::data_type::s32,
@@ -616,7 +622,6 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
       if (src_memory_reorder_p) {
         pipeline.push_back(*src_memory_reorder_p);
       }
-
       auto residual_reorder_p = std::static_pointer_cast<mkldnn::memory>(
           dev_ctx.GetBlob(residual_reorder_key));
       if (residual_reorder_p) {
@@ -684,7 +689,7 @@ class ConvMKLDNNGradOpKernel : public paddle::framework::OpKernel<T> {
     std::vector<int> weights_tz =
         paddle::framework::vectorize2int(filter->dims());
     int g = std::max(groups, 1);
-    GetWeightsTz(weights_tz, g, is_conv3d);
+    GetWeightsTz(weights_tz, g);
     std::vector<int> dst_tz =
         paddle::framework::vectorize2int(output_grad->dims());
     auto src_format = input->format();
