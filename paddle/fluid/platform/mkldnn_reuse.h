@@ -1202,7 +1202,6 @@ class ConvMKLDNNTemplateHandler : public MKLDNNHandler {
       post_operations.append_eltwise(scale, mkldnn::algorithm::eltwise_relu,
                                      fuse_alpha, fuse_beta);
     }
-
     if (fuse_activation == "relu6") {
       constexpr float scale = 1.0f;
       post_operations.append_eltwise(scale,

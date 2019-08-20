@@ -327,15 +327,8 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
   }
 
   std::vector<float> ComputeBiasScales(
-      const paddle::framework::ExecutionContext& ctx, const int groups,
-      const std::vector<int>& weights_tz) {
-    auto scale_in_data = ctx.Attr<float>("Scale_in");
-    auto scale_weights_data = ctx.Attr<std::vector<float>>("Scale_weights");
-    bool is_multi_channel = scale_weights_data.size() > 1;
-    int count =
-        is_multi_channel
-            ? (groups > 1 ? (weights_tz)[1] * (weights_tz)[0] : (weights_tz)[0])
-            : 1;
+      float scale_in_data, const std::vector<float> scale_weights_data,
+      int count, const std::vector<int>& weights_tz) {
     std::vector<float> scale_bias_data(count);
 #pragma omp parallel for if (count > 1)
     for (int i = 0; i < count; i++) {
@@ -348,18 +341,8 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
   }
 
   std::vector<float> ComputeOutputShiftScale(
-      const paddle::framework::ExecutionContext& ctx, const int groups,
-      const std::vector<int>& weights_tz) {
-    auto scale_in_data = ctx.Attr<float>("Scale_in");
-    auto scale_weights_data = ctx.Attr<std::vector<float>>("Scale_weights");
-    auto scale_out_data = ctx.Attr<bool>("force_fp32_output")
-                              ? 1.0f
-                              : ctx.Attr<float>("Scale_out");
-    bool is_multi_channel = scale_weights_data.size() > 1;
-    int count =
-        is_multi_channel
-            ? (groups > 1 ? (weights_tz)[1] * (weights_tz)[0] : (weights_tz)[0])
-            : 1;
+      float scale_in_data, const std::vector<float>& scale_weights_data,
+      int count, const std::vector<int>& weights_tz) {
     std::vector<float> output_shift_scale(count);
 #pragma omp parallel for
     for (int i = 0; i < count; i++) {
@@ -387,6 +370,17 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
     auto* filter = ctx.Input<Tensor>("Filter");
     auto* bias = ctx.HasInput("Bias") ? ctx.Input<Tensor>("Bias") : nullptr;
     auto* output = ctx.Output<Tensor>("Output");
+    std::vector<int> strides = ctx.Attr<std::vector<int>>("strides");
+    std::vector<int> paddings = ctx.Attr<std::vector<int>>("paddings");
+    std::vector<int> dilations = ctx.Attr<std::vector<int>>("dilations");
+    int groups = ctx.Attr<int>("groups");
+    std::string fuse_activation = ctx.Attr<std::string>("fuse_activation");
+    float fuse_alpha = ctx.Attr<float>("fuse_alpha");
+    float fuse_beta = ctx.Attr<float>("fuse_beta");
+    bool fuse_residual_conn = ctx.Attr<bool>("fuse_residual_connection");
+    bool force_fp32_output = ctx.Attr<bool>("force_fp32_output");
+    bool unsigned_output =
+        (fuse_activation == "relu" || fuse_activation == "relu6");
 
     PADDLE_ENFORCE(input->layout() == DataLayout::kMKLDNN &&
                        input->format() != memory::format::format_undef,
@@ -405,19 +399,6 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
       PADDLE_ENFORCE(bias->dims().size() == 1,
                      "Bias must only have 1 dimension, i.e. X");
     }
-
-    std::vector<int> strides = ctx.Attr<std::vector<int>>("strides");
-    std::vector<int> paddings = ctx.Attr<std::vector<int>>("paddings");
-    std::vector<int> dilations = ctx.Attr<std::vector<int>>("dilations");
-    int groups = ctx.Attr<int>("groups");
-    std::string fuse_activation = ctx.Attr<std::string>("fuse_activation");
-    float fuse_alpha = ctx.Attr<float>("fuse_alpha");
-    float fuse_beta = ctx.Attr<float>("fuse_beta");
-    bool fuse_residual_conn = ctx.Attr<bool>("fuse_residual_connection");
-    bool force_fp32_output = ctx.Attr<bool>("force_fp32_output");
-    bool unsigned_output =
-        (fuse_activation == "relu" || fuse_activation == "relu6");
-
     PADDLE_ENFORCE(!fuse_residual_conn || !force_fp32_output,
                    "residual fusion does not support force output with fp32");
 
@@ -487,14 +468,22 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
       auto scale_in_data = ctx.Attr<float>("Scale_in");
       auto scale_in_eltwise_data = ctx.Attr<float>("Scale_in_eltwise");
       auto scale_weights_data = ctx.Attr<std::vector<float>>("Scale_weights");
+      auto scale_out_data = ctx.Attr<bool>("force_fp32_output")
+                                ? 1.0f
+                                : ctx.Attr<float>("Scale_out");
+      bool is_multi_channel = scale_weights_data.size() > 1;
+      int count = is_multi_channel
+                      ? (groups > 1 ? (weights_tz)[1] * (weights_tz)[0]
+                                    : (weights_tz)[0])
+                      : 1;
 
       auto scale_out_data =
           force_fp32_output ? 1.0f : ctx.Attr<float>("Scale_out");
       float sum_scale =
           fuse_residual_conn ? scale_out_data / scale_in_eltwise_data : 1.0f;
 
-      std::vector<float> output_shift_scale =
-          ComputeOutputShiftScale(ctx, groups, weights_tz);
+      std::vector<float> output_shift_scale = ComputeOutputShiftScale(
+          scale_in_data, scale_weights_data, count, weights_tz);
       auto user_src_md =
           platform::MKLDNNMemDesc({src_tz}, src_dt, input->format());
       auto user_weights_md = platform::MKLDNNMemDesc(
@@ -601,8 +590,8 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
             user_bias_md, to_void_cast<K>(bias_data));
         std::shared_ptr<mkldnn::memory> bias_memory_p;
         int mask_reorder = is_multi_channel ? 1 << 0 : 1;
-        std::vector<float> scale_bias_data =
-            ComputeBiasScales(ctx, g, weights_tz);
+        std::vector<float> scale_bias_data = ComputeBiasScales(
+            scale_in_data, scale_weights_data, count, weights_tz);
         bias_memory_p = handler->AcquireBiasMemoryFromPrimitive(
             user_bias_memory_p, pipeline, is_test, true, scale_bias_data,
             mask_reorder);
