@@ -29,34 +29,12 @@ using mkldnn::stream;
 using platform::to_void_cast;
 using platform::GetMKLDNNFormat;
 
-inline void GetWeightsTz(std::vector<int>& weights_tz, int groups,  // NOLINT
-                         bool is_conv3d) {
+inline void GetWeightsTz(std::vector<int>& weights_tz, int groups) {  // NOLINT
   if (groups > 1) {
-    if (is_conv3d) {
-      int output = weights_tz[0];
-      int input = weights_tz[1];
-      int dimension = weights_tz[2];
-      int height = weights_tz[3];
-      int width = weights_tz[4];
-      weights_tz.resize(6);
-      weights_tz[0] = groups;
-      weights_tz[1] = output / groups;
-      weights_tz[2] = input;
-      weights_tz[3] = dimension;
-      weights_tz[4] = height;
-      weights_tz[5] = width;
-    } else {
-      int output = weights_tz[0];
-      int input = weights_tz[1];
-      int height = weights_tz[2];
-      int width = weights_tz[3];
-      weights_tz.resize(5);
-      weights_tz[0] = groups;
-      weights_tz[1] = output / groups;
-      weights_tz[2] = input;
-      weights_tz[3] = height;
-      weights_tz[4] = width;
-    }
+    weights_tz.push_back(0);
+    std::rotate(weights_tz.begin(), weights_tz.end() - 1, weights_tz.end());
+    weights_tz[0] = groups;
+    weights_tz[1] = weights_tz[1] / groups;
   }
 }
 
@@ -66,6 +44,47 @@ inline mkldnn::memory::format GetWeightsFormat(mkldnn::memory::format format,
     return (groups == 1) ? format : mkldnn::memory::format::goidhw;
   } else {
     return (groups == 1) ? format : mkldnn::memory::format::goihw;
+  }
+}
+
+inline void ComputeOutputShiftScale(
+    std::vector<float>& output_shift_scale, const int groups,  // NOLINT
+    const std::vector<int>& weights_tz, float scale_out_data,
+    float scale_in_eltwise_data, float scale_in_data,
+    const std::vector<float>& scale_weights_data) {
+  int count = output_shift_scale.size();
+#pragma omp parallel for
+  for (int i = 0; i < count; i++) {
+    if (scale_weights_data[i] == 0.0) {
+      output_shift_scale[i] = scale_out_data;
+    } else {
+      output_shift_scale[i] =
+          static_cast<float>(static_cast<double>(scale_out_data) /
+                             (static_cast<double>(scale_in_data) *
+                              static_cast<double>(scale_weights_data[i])));
+    }
+  }
+}
+
+inline float ComputeInt8SumScale(float scale_out_data,
+                                 float scale_in_eltwise_data,
+                                 bool fuse_residual_conn) {
+  // To make the output with the scale of scale_out, scale the residual with
+  // [scale_out_data / scale_in_eltwise_data]
+  auto sum_scale =
+      fuse_residual_conn ? scale_out_data / scale_in_eltwise_data : 1.0f;
+  return sum_scale;
+}
+
+inline void ComputeBiasScale(std::vector<float>& scale_bias_data,  // NOLINT
+                             int g,                                // NOLINT
+                             const std::vector<int>& weights_tz,
+                             float scale_in_data,
+                             const std::vector<float>& scale_weights_data) {
+  int count = scale_bias_data.size();
+#pragma omp parallel for if (count > 1)
+  for (int i = 0; i < count; i++) {
+    scale_bias_data[i] = scale_in_data * scale_weights_data[i];
   }
 }
 
@@ -172,7 +191,7 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
     std::vector<int> weights_tz =
         paddle::framework::vectorize2int(filter->dims());
     int g = std::max(groups, 1);
-    GetWeightsTz(weights_tz, g, is_conv3d);
+    GetWeightsTz(weights_tz, g);
     std::vector<int> dst_tz = paddle::framework::vectorize2int(output->dims());
 
     // Get unique name for storing MKLDNN primitives
@@ -317,6 +336,7 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
     output->set_layout(DataLayout::kMKLDNN);
     output->set_format(GetMKLDNNFormat(*dst_memory_p));
   }
+
   template <typename T_out>
   void ComputeINT8(const paddle::framework::ExecutionContext& ctx) const {
     const bool is_test = ctx.Attr<bool>("is_test");
@@ -359,6 +379,11 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
     bool force_fp32_output = ctx.Attr<bool>("force_fp32_output");
     bool unsigned_output =
         (fuse_activation == "relu" || fuse_activation == "relu6");
+    auto scale_in_data = ctx.Attr<float>("Scale_in");
+    auto scale_in_eltwise_data = ctx.Attr<float>("Scale_in_eltwise");
+    auto scale_weights_data = ctx.Attr<std::vector<float>>("Scale_weights");
+    auto scale_out_data =
+        force_fp32_output ? 1.0f : ctx.Attr<float>("Scale_out");
 
     PADDLE_ENFORCE(!fuse_residual_conn || !force_fp32_output,
                    "residual fusion does not support force output with fp32");
@@ -380,13 +405,11 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
     std::vector<int> weights_tz =
         paddle::framework::vectorize2int(filter->dims());
     int g = std::max(groups, 1);
-
-    GetWeightsTz(weights_tz, g, is_conv3d);
+    GetWeightsTz(weights_tz, g);
     std::vector<int> dst_tz = paddle::framework::vectorize2int(output->dims());
 
     mkldnn::memory::data_type src_dt =
         paddle::framework::ToMKLDNNDataType(input->type());
-
     // Get unique name for storing MKLDNN primitives
     std::string key;
     key.reserve(MaxKeyLength);
@@ -427,33 +450,18 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
 
     if (conv_p == nullptr || !is_test) {
       const K* filter_data = filter->data<K>();
-      auto scale_in_data = ctx.Attr<float>("Scale_in");
-      auto scale_in_eltwise_data = ctx.Attr<float>("Scale_in_eltwise");
-      auto scale_weights_data = ctx.Attr<std::vector<float>>("Scale_weights");
-      auto scale_out_data =
-          force_fp32_output ? 1.0f : ctx.Attr<float>("Scale_out");
-      float sum_scale =
-          fuse_residual_conn ? scale_out_data / scale_in_eltwise_data : 1.0f;
-
       bool is_multi_channel = scale_weights_data.size() > 1;
+      int scale_count =
+          is_multi_channel
+              ? (g > 1 ? (weights_tz)[1] * (weights_tz)[0] : (weights_tz)[0])
+              : 1;
+      std::vector<float> output_shift_scale(scale_count);
+      ComputeOutputShiftScale(output_shift_scale, groups, weights_tz,
+                              scale_out_data, scale_in_eltwise_data,
+                              scale_in_data, scale_weights_data);
 
-      int count = is_multi_channel ? (g > 1 ? (weights_tz)[1] * (weights_tz)[0]
-                                            : (weights_tz)[0])
-                                   : 1;
-      std::vector<float> output_shift_scale(count);
-#pragma omp parallel for if (count > 1)
-      for (int i = 0; i < count; i++) {
-        if (scale_weights_data[i] == 0.0)
-          output_shift_scale[i] =
-              scale_out_data;  // weights data will contain 0
-                               // in some models, then weights
-                               // scale couldn't be calculated
-        else
-          output_shift_scale[i] =
-              static_cast<float>(static_cast<double>(scale_out_data) /
-                                 (static_cast<double>(scale_in_data) *
-                                  static_cast<double>(scale_weights_data[i])));
-      }
+      float sum_scale = ComputeInt8SumScale(
+          scale_out_data, scale_in_eltwise_data, fuse_residual_conn);
 
       auto user_src_md =
           platform::MKLDNNMemDesc({src_tz}, src_dt, input->format());
@@ -553,15 +561,11 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
             user_bias_md, to_void_cast<K>(bias_data));
         std::shared_ptr<mkldnn::memory> bias_memory_p;
         int mask_reorder = is_multi_channel ? 1 << 0 : 1;
-        int count =
-            is_multi_channel
-                ? (g > 1 ? (weights_tz)[1] * (weights_tz)[0] : (weights_tz)[0])
-                : 1;
-        std::vector<float> scale_bias_data(count);
-#pragma omp parallel for if (count > 1)
-        for (int i = 0; i < count; i++) {
-          scale_bias_data[i] = scale_in_data * scale_weights_data[i];
-        }
+
+        std::vector<float> scale_bias_data(scale_count);
+
+        ComputeBiasScale(scale_bias_data, g, weights_tz, scale_in_data,
+                         scale_weights_data);
         bias_memory_p = handler->AcquireBiasMemoryFromPrimitive(
             user_bias_memory_p, pipeline, is_test, true, scale_bias_data,
             mask_reorder);
@@ -621,6 +625,8 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
     if (need_s8_to_u8) {
       output->mutable_data<uint8_t>(ctx.GetPlace());
     }
+    // std::cout<<"need_s8_to_u8:"<<need_s8_to_u8<<std::endl;
+    // output->mutable_data<T_out>(ctx.GetPlace());
     output->set_layout(DataLayout::kMKLDNN);
     output->set_format(GetMKLDNNFormat(*dst_memory_p));
   }
@@ -676,7 +682,7 @@ class ConvMKLDNNGradOpKernel : public paddle::framework::OpKernel<T> {
     std::vector<int> weights_tz =
         paddle::framework::vectorize2int(filter->dims());
     int g = std::max(groups, 1);
-    GetWeightsTz(weights_tz, g, is_conv3d);
+    GetWeightsTz(weights_tz, g);
     std::vector<int> dst_tz =
         paddle::framework::vectorize2int(output_grad->dims());
     auto src_format = input->format();
