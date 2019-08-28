@@ -411,12 +411,21 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
     mkldnn::memory::data_type src_dt =
         paddle::framework::ToMKLDNNDataType(input->type());
     // Get unique name for storing MKLDNN primitives
-    std::string key;
-    key.reserve(MaxKeyLength);
-    platform::ConvMKLDNNHandler::AppendKey(
-        &key, src_tz, weights_tz, strides, paddings, dilations, groups, src_dt,
+    // std::string key;
+    // key.reserve(MaxKeyLength);
+    // platform::ConvMKLDNNHandler::AppendKey(
+    //     &key, src_tz, weights_tz, strides, paddings, dilations, groups,
+    //     src_dt,
+    //     input->format(), fuse_activation, fuse_residual_conn,
+    //     ctx.op().Input("Input") + ctx.op().Input("Filter"));
+
+    // Get unique name for storing MKLDNN primitives
+    std::string key = platform::ConvMKLDNNHandler::GetHash(
+        src_tz, weights_tz, strides, paddings, dilations, groups, src_dt,
         input->format(), fuse_activation, fuse_residual_conn,
         ctx.op().Input("Input") + ctx.op().Input("Filter"));
+
+    std::vector<primitive> pipeline;
 
     const std::string key_conv_pd = key + "@conv_pd";
 
@@ -427,7 +436,7 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
     std::shared_ptr<mkldnn::memory> dst_memory_p;
     std::vector<primitive> pipeline;
     std::shared_ptr<mkldnn::convolution_forward::primitive_desc> conv_pd;
-    std::shared_ptr<platform::ConvMKLDNNHandler> handler;
+    // std::shared_ptr<platform::ConvMKLDNNHandler> handler;
 
     // This is workaround for hacky implementation
     // of conv int8 mkl-dnn. Once conv fp32 and conv int8
@@ -438,12 +447,27 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
       key_tid = "-t:" + platform::MKLDNNHandler::ThreadIDasStr();
     }
 
-    auto prim_key = key + key_tid + "@conv_p";
-    auto dst_key = key + key_tid + "@dst_mem_p";
-    auto src_key = key + key_tid + "@src_mem_p";
-    auto user_src_key = key + key_tid + "@user_src_mem_p";
-    auto src_reorder_key = key + key_tid + "@src_mem_preorder_p";
-    auto residual_reorder_key = key + key_tid + "@residual_data_mem_preorder_p";
+    // MKLDNNHandler(const MKLDNNDeviceContext& dev_ctx, mkldnn::engine engine,
+    //                 const std::string& base_key)
+    //       : dev_ctx_(dev_ctx), engine_(engine), key_common_(base_key) {
+    //     if (platform::get_cur_mkldnn_session_id() !=
+    //         platform::kMKLDNNSessionID_Default) {
+    //       key_ = key_common_;
+    //     } else {
+    //       key_ = key_common_ + "-t:" + MKLDNNHandler::ThreadIDasStr();
+    //     }
+    //   }
+
+    // auto prim_key = key + key_tid + "@conv_p";
+    // auto dst_key = key + key_tid + "@dst_mem_p";
+    // auto src_key = key + key_tid + "@src_mem_p";
+    // auto user_src_key = key + key_tid + "@user_src_mem_p";
+    // TODO(lidanqing) @src_mem_preorder_p and @residual_data_mem_preorder_p
+    // does not exist
+    // in mkldnn_reuse.h
+    // auto src_reorder_key = key + key_tid + "@src_mem_preorder_p";
+    // auto residual_reorder_key = key + key_tid +
+    // "@residual_data_mem_preorder_p";
 
     conv_p = std::static_pointer_cast<mkldnn::convolution_forward>(
         dev_ctx.GetBlob(prim_key));
@@ -486,6 +510,8 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
           weights_tz, memory::data_type::s8, chosen_memory_format);
       auto dst_md = platform::MKLDNNMemDesc(
           dst_tz, platform::MKLDNNGetDataType<T_out>(), chosen_memory_format);
+
+      platform::ConvMKLDNNHandler handler(dev_ctx, mkldnn_engine, key);
 
       handler.reset(
           new platform::ConvMKLDNNHandler(dev_ctx, mkldnn_engine, key));

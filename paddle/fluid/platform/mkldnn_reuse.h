@@ -1347,6 +1347,20 @@ class ConvMKLDNNTemplateHandler : public MKLDNNHandler {
            std::to_string(groups) + suffix;
   }
 
+  // For INT8 conv key
+  const std::string GetHash(
+      mkldnn::memory::dims& src_tz, mkldnn::memory::dims& weights_tz,  // NOLINT
+      std::vector<int>& strides, std::vector<int>& paddings,           // NOLINT
+      std::vector<int>& dilations, int groups,                         // NOLINT
+      const mkldnn::memory::data_type src_dt, const mkldnn::memory::format fmt,
+      std::string fuse_activation, bool fuse_residual_conn,
+      const std::string& suffix) {
+    return dims2str(src_tz) + dims2str(weights_tz) + dims2str(strides) +
+           dims2str(paddings) + dims2str(dilations) + std::to_string(groups) +
+           std::to_string(src_dt) + std::to_string(fmt) + fuse_activation +
+           std::to_string(fuse_residual_conn) + suffix;
+  }
+
   // Generate keys for storing/retriving primitives for this operator
   // TODO(jczaja): Make hashing function more optimial
   static std::string GetHash(mkldnn::memory::dims& input_dims,    // NOLINT
