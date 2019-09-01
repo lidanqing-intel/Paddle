@@ -82,7 +82,7 @@ class MKLDNNPostTrainingQuantStrategy(Strategy):
 
         if six.PY3:
             data = warmup_reader.__next__()
-
+        # https://github.com/PaddlePaddle/Paddle/issues/19471 Add object detection data reader for slim 
         num_images = len(data)
         image_data = [img.tolist() for (img, _) in data]
         image_data = np.array(image_data).astype("float32").reshape(

@@ -239,7 +239,7 @@ class SoftmaxMKLDNNGradKernel : public paddle::framework::OpKernel<T> {
     PADDLE_ENFORCE(softmax_pd != nullptr,
                    "Fail to find softmax_pd in device context");
 
-    // TODO(jczaja): Add layouts support when there is a need to do so
+    // https://github.com/PaddlePaddle/Paddle/issues/19467 Add layouts support when there is a need to do so
     // Two dimensional softmax does support NC format
     auto data_softmax_md = MKLDNNMemDesc(
         {softmax_tz}, platform::MKLDNNGetDataType<T>(), memory::format::nc);

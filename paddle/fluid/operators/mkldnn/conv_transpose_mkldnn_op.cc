@@ -63,7 +63,7 @@ class ConvTransposeMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
       PADDLE_ENFORCE(bias->dims().size() == 1,
                      "Bias must only have 1 dimension, i.e. X");
     }
-
+    //https://github.com/PaddlePaddle/Paddle/issues/19464 Dilation convolution not supported now.
     std::vector<int> strides = ctx.Attr<std::vector<int>>("strides");
     std::vector<int> paddings = ctx.Attr<std::vector<int>>("paddings");
     std::vector<int> dilations = ctx.Attr<std::vector<int>>("dilations");
