@@ -94,7 +94,7 @@ void SetInput(std::vector<std::vector<PaddleTensor>> *inputs,
   auto lod_offset_in_file =
       image_beginning_offset + sizeof(float) * total_images * 3 * 300 * 300;
   auto labels_beginning_offset =
-      lod_offset_in_file + sizeof(size_t) * total_images;
+      lod_offset_in_file + sizeof(size_t) * total_images;  // size_t is uint64
 
   std::vector<size_t> lod_full =
       ReadObjectsNum(file, lod_offset_in_file, total_images);

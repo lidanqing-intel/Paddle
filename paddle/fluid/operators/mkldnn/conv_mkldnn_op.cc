@@ -438,11 +438,6 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
     }
 
     auto prim_key = key + key_tid + "@conv_p";
-    auto dst_key = key + key_tid + "@dst_mem_p";
-    auto src_key = key + key_tid + "@src_mem_p";
-    auto user_src_key = key + key_tid + "@user_src_mem_p";
-    auto src_reorder_key = key + key_tid + "@src_mem_preorder_p";
-    auto residual_reorder_key = key + key_tid + "@residual_data_mem_preorder_p";
 
     conv_p = std::static_pointer_cast<mkldnn::convolution_forward>(
         dev_ctx.GetBlob(prim_key));
@@ -595,6 +590,12 @@ class ConvMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
       // push primitive to stream and wait until it's executed
       pipeline.push_back(*conv_p);
     } else {
+      auto dst_key = key + key_tid + "@dst_mem_p";
+      auto src_key = key + key_tid + "@src_mem_p";
+      auto user_src_key = key + key_tid + "@user_src_mem_p";
+      auto src_reorder_key = key + key_tid + "@src_mem_preorder_p";
+      auto residual_reorder_key =
+          key + key_tid + "@residual_data_mem_preorder_p";
       auto src_memory_reorder_p = std::static_pointer_cast<mkldnn::memory>(
           dev_ctx.GetBlob(src_reorder_key));
       src_memory_p =
