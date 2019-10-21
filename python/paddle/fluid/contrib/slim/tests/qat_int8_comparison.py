@@ -84,6 +84,7 @@ class TestQatInt8Comparison(unittest.TestCase):
             with open(data_file, 'rb') as fp:
                 num = fp.read(8)
                 num = struct.unpack('q', num)[0]
+                print("num is", num)
                 imgs_offset = 8
                 img_ch = 3
                 img_w = 224
