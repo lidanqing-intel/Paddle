@@ -387,7 +387,7 @@ if __name__ == '__main__':
     test_case_args, remaining_args = parse_args()
     # unittest.main(argv=remaining_args)
 
-    data_file = '/home/lidanqing/.cache/paddle/dataset/int8/download/int8_full_val.bin'
+    data_file = '/home/lidanqing/.cache/paddle/dataset/pascalvoc/pascalvoc_full.bin'
     print("Until here it looks good")
     # def reader():
     with open(data_file, 'rb') as f1:
@@ -403,15 +403,15 @@ if __name__ == '__main__':
         per_pixel_size = 4  # size of float
         img_size = img_ch * img_h * img_w * per_pixel_size
         per_label_size = 8
-        objects_num_offset = 8 + 4952 * 300 * 300 * 3 * 4
+        objects_num_offset = 8 + num * img_w * img_h * img_ch * 4
         f1.seek(objects_num_offset)
-        object_nums = f1.read(4952 * 8)
+        object_nums = f1.read(num * 8)
         # print(object_nums)
         # print(num * 8)
         print("size of object_nums is", sys.getsizeof(object_nums))
         object_nums = struct.unpack_from('{}Q'.format(num), object_nums)
-        # object_nums = np.frombuffer(object_nums_buffer, dtype=np.uint64)
-        # print(object_nums)
+        print(object_nums)
+
         object_nums_sum = sum(object_nums)
         if (len(object_nums) != num):
             print("size of object_nums is not equal to image num")
@@ -434,31 +434,32 @@ if __name__ == '__main__':
 
             # read one image objects labels data
             f1.seek(lbs_offset)
-            step_lbls_size = object_nums_sum[step] * 8
+            step_lbls_size = object_nums[step] * 8
             lbls = f1.read(step_lbls_size)
             lbs_offset = lbs_offset + step_lbls_size
-            lbls = struct.unpack_from('{}q'.format(step_lbls_size), lbls)
+            lbls = struct.unpack_from('{}q'.format(object_nums[step]), lbls)
             lbls = np.array(lbls)
-            lbls.shape = (object_nums_sum[step], 1)
+            lbls.shape = (object_nums[step], 1)
 
             #read one image object boxes data
             f1.seek(boxes_offset)
-            step_boxes_size = object_nums_sum[step] * 4 * 4
+            step_boxes_size = object_nums[step] * 4 * 4
             boxes = f1.read(step_boxes_size)
             boxes_offset = boxes_offset + step_boxes_size
-            boxes = struct.unpack_from('{}f'.format(step_boxes_size), lbls)
+            boxes = struct.unpack_from('{}f'.format(object_nums[step] * 4),
+                                       boxes)
             boxes = np.array(boxes)
-            boxes.shape = (object_nums_sum[step], 4)
+            boxes.shape = (object_nums[step], 4)
 
             # read one image object difficulties data
             f1.seek(difficulties_offset)
-            step_difficulties_size = object_nums_sum[step] * 8
+            step_difficulties_size = object_nums[step] * 8
             difficulties = f1.read(step_difficulties_size)
             difficulties_offset = difficulties_offset + step_difficulties_size
-            difficulties = struct.unpack_from(
-                '{}q'.format(step_difficulties_size), difficulties)
+            difficulties = struct.unpack_from('{}q'.format(object_nums[step]),
+                                              difficulties)
             difficulties = np.array(difficulties)
-            difficulties.shape = (object_nums_sum[step], 1)
+            difficulties.shape = (object_nums[step], 1)
 
             # yield (img, boxes, lbls, difficulties)
             step += 1
