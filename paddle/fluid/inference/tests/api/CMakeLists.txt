@@ -54,6 +54,17 @@ function(inference_analysis_api_object_dection_int8_test_run TARGET_NAME test_bi
 	     --iterations=1)
 endfunction()
 
+function(inference_analysis_api_ernie_int8_test_run TARGET_NAME test_binary model_dir data_path)
+	inference_analysis_test_run(${TARGET_NAME}
+	COMMAND ${test_binary}
+        ARGS --infer_model=${model_dir}/model
+             --infer_data=${data_path}
+             --warmup_batch_size=10
+             --batch_size=300
+             --paddle_num_threads=${CPU_NUM_THREADS_ON_CI}
+	     --iterations=1)
+endfunction()
+
 function(inference_analysis_api_test_with_fake_data_build TARGET_NAME filename)
 	inference_analysis_test_build(${TARGET_NAME} SRCS ${filename}
         EXTRA_DEPS ${INFERENCE_EXTRA_DEPS})
@@ -255,6 +266,16 @@ if(WITH_MKLDNN)
   set(INT8_MOBILENET_SSD_MODEL_DIR "${INT8_DATA_DIR}/mobilenet-ssd")
   download_int8_data(${INT8_MOBILENET_SSD_MODEL_DIR} "mobilenet_ssd_int8_model.tar.gz" )
   inference_analysis_api_object_dection_int8_test_run(test_analyzer_int8_mobilenet_ssd ${INT8_OBJ_DETECT_TEST_APP} ${INT8_MOBILENET_SSD_MODEL_DIR} ${PASCALVOC_DATA_PATH})
+  
+  ### Language processing models
+  set(INT8_ERNIE_TEST_APP "test_analyzer_int8_ernie")
+  set(INT8_ERNIE_TEST_APP_SRC "analyzer_int8_ernie_tester.cc")
+
+  # build test binary to be used in subsequent tests
+  inference_analysis_api_int8_test_build(${INT8_ERNIE_TEST_APP} ${INT8_ERNIE_TEST_APP_SRC})
+
+  # ernie int8
+  inference_analysis_api_ernie_int8_test_run(test_analyzer_int8_ernie ${INT8_ERNIE_TEST_APP} ${INT8_MOBILENET_SSD_MODEL_DIR} ${PASCALVOC_DATA_PATH})
 
 endif()
 
