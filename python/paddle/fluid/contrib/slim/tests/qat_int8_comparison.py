@@ -80,34 +80,34 @@ class TestQatInt8Comparison(unittest.TestCase):
     """
 
     def _reader_creator(self, data_file='data.bin'):
-        # def reader():
-        with open(data_file, 'rb') as fp:
-            num = fp.read(8)
-            num = struct.unpack('q', num)[0]
-            imgs_offset = 8
-            img_ch = 3
-            img_w = 224
-            img_h = 224
-            img_pixel_size = 4
-            img_size = img_ch * img_h * img_w * img_pixel_size
-            label_size = 8
-            labels_offset = imgs_offset + num * img_size
+        def reader():
+            with open(data_file, 'rb') as fp:
+                num = fp.read(8)
+                num = struct.unpack('q', num)[0]
+                imgs_offset = 8
+                img_ch = 3
+                img_w = 224
+                img_h = 224
+                img_pixel_size = 4
+                img_size = img_ch * img_h * img_w * img_pixel_size
+                label_size = 8
+                labels_offset = imgs_offset + num * img_size
 
-            step = 0
-            while step < num:
-                fp.seek(imgs_offset + img_size * step)
-                img = fp.read(img_size)
-                img = struct.unpack_from('{}f'.format(img_ch * img_w * img_h),
-                                         img)
-                img = np.array(img)
-                img.shape = (img_ch, img_w, img_h)
-                fp.seek(labels_offset + label_size * step)
-                label = fp.read(label_size)
-                label = struct.unpack('q', label)[0]
-                yield img, int(label)
-                step += 1
+                step = 0
+                while step < num:
+                    fp.seek(imgs_offset + img_size * step)
+                    img = fp.read(img_size)
+                    img = struct.unpack_from(
+                        '{}f'.format(img_ch * img_w * img_h), img)
+                    img = np.array(img)
+                    img.shape = (img_ch, img_w, img_h)
+                    fp.seek(labels_offset + label_size * step)
+                    label = fp.read(label_size)
+                    label = struct.unpack('q', label)[0]
+                    yield img, int(label)
+                    step += 1
 
-        # return reader
+        return reader
 
     def _get_batch_accuracy(self, batch_output=None, labels=None):
         total = 0

@@ -208,7 +208,7 @@ class TestQatInt8Comparison(unittest.TestCase):
                         # print("A new iteration ends here i is"+ str(i))
                         mat.append(mat_i)
                     print("size of mat is " + str(len(mat)))
-                    yield mat[0],mat[1],mat[2],mat[3]
+                    yield mat[0], mat[1], mat[2], mat[3]
 
         return reader
 
@@ -313,75 +313,73 @@ class TestQatInt8Comparison(unittest.TestCase):
             # outputs = []
             # infer_accs1 = []
             # infer_accs5 = []
-            fpses = []
+            # fpses = []
             # batch_times = []
             # total_samples = 0
             # top1 = 0.0
             # top5 = 0.0
-            iters = 0
-            infer_start_time = time.time()
-            for batch_id, data in enumerate(test_reader()):
-                if batch_num > 0 and batch_id >= batch_num:
-                    break
+            # iters = 0
+            # infer_start_time = time.time()
+            # for batch_id, data in enumerate(test_reader()):
+            #     if batch_num > 0 and batch_id >= batch_num:
+            #         break
 
-                # print("Data in the _predict is ", data)
-                assert isinstance(data, list)
-                assert len(data) == batch_size
-                # assert isinstance(data[0], Ids)
-                # ids = data[0]
+            #     # print("Data in the _predict is ", data)
+            #     assert isinstance(data, list)
+            #     assert len(data) == batch_size
+            #     # assert isinstance(data[0], Ids)
+            #     # ids = data[0]
 
-                # if six.PY2:
-                #     batch_src_ids=map(lambda x:x[0], data)
-                #     batch_pos_ids=map(lambda x:x[1], data)    
-                #     batch_sent_ids=map(lambda x:x[2], data)
-                #     batch_input_mask=map(lambda x:x[3], data)
-                # if six.PY3:
-                batch_src_ids = np.array([x[0] for x in data]).astype('int64') 
-                batch_pos_ids=np.array([x[1] for x in data]).astype('int64')    
-                batch_sent_ids=np.array([x[2] for x in data]).astype('int64') 
-                batch_input_mask=np.array([x[3] for x in data]).astype('float32') 
+            #     # if six.PY2:
+            #     #     batch_src_ids=map(lambda x:x[0], data)
+            #     #     batch_pos_ids=map(lambda x:x[1], data)    
+            #     #     batch_sent_ids=map(lambda x:x[2], data)
+            #     #     batch_input_mask=map(lambda x:x[3], data)
+            #     # if six.PY3:
+            #     batch_src_ids = np.array([x[0] for x in data]).astype('int64') 
+            #     batch_pos_ids=np.array([x[1] for x in data]).astype('int64')    
+            #     batch_sent_ids=np.array([x[2] for x in data]).astype('int64') 
+            #     batch_input_mask=np.array([x[3] for x in data]).astype('float32') 
 
-                start = time.time()
-                
-                out = exe.run(inference_program,
-                              feed={
-                                  feed_target_names[0]: batch_src_ids,
-                                  feed_target_names[1]: batch_pos_ids,
-                                  feed_target_names[2]: batch_sent_ids,
-                                  feed_target_names[3]: batch_input_mask
-                              },
-                              fetch_list=fetch_targets)
-                batch_time = (time.time() - start) * 1000  # in miliseconds
-                # outputs.append(out[0])
-                # batch_acc1, batch_acc5 = self._get_batch_accuracy(out[0],
-                #                                                   labels)
-                # infer_accs1.append(batch_acc1)
-                # infer_accs5.append(batch_acc5)
-                samples = len(data)
-                total_samples += samples
-                # batch_times.append(batch_time)
-                fps = samples / batch_time * 1000
-                fpses.append(fps)
-                appx = ' (warm-up)' if batch_id <= skip_batch_num else ''
-                _logger.info('batch {0}{5}, acc1: {1:.4f}, acc5: {2:.4f}, '
-                             'latency: {3:.4f} ms, fps: {4:.2f}'.format(
-                                 batch_id, batch_time / batch_size, fps, appx))
+            #     start = time.time()
 
-#/* batch_acc1, batch_acc5,
+            #     out = exe.run(inference_program,
+            #                   feed={
+            #                       feed_target_names[0]: batch_src_ids,
+            #                       feed_target_names[1]: batch_pos_ids,
+            #                       feed_target_names[2]: batch_sent_ids,
+            #                       feed_target_names[3]: batch_input_mask
+            #                   },
+            #                   fetch_list=fetch_targets)
+            #     batch_time = (time.time() - start) * 1000  # in miliseconds
+            #     # outputs.append(out[0])
+            #     # batch_acc1, batch_acc5 = self._get_batch_accuracy(out[0],
+            #     #                                                   labels)
+            #     # infer_accs1.append(batch_acc1)
+            #     # infer_accs5.append(batch_acc5)
+            #     samples = len(data)
+            #     total_samples += samples
+            #     # batch_times.append(batch_time)
+            #     fps = samples / batch_time * 1000
+            #     fpses.append(fps)
+            #     appx = ' (warm-up)' if batch_id <= skip_batch_num else ''
+            #     _logger.info('batch {0}{5}, acc1: {1:.4f}, acc5: {2:.4f}, '
+            #                  'latency: {3:.4f} ms, fps: {4:.2f}'.format(
+            #                      batch_id, batch_time / batch_size, fps, appx))
 
-# # Postprocess benchmark data
-# batch_latencies = batch_times[skip_batch_num:]
-# batch_latency_avg = np.average(batch_latencies)
-# latency_avg = batch_latency_avg / batch_size
-# fpses = fpses[skip_batch_num:]
-# fps_avg = np.average(fpses)
-# infer_total_time = time.time() - infer_start_time
-# acc1_avg = np.mean(infer_accs1)
-# acc5_avg = np.mean(infer_accs5)
-# _logger.info('Total inference run time: {:.2f} s'.format(
-#     infer_total_time))
+            #/* batch_acc1, batch_acc5,
 
-            
+            # # Postprocess benchmark data
+            # batch_latencies = batch_times[skip_batch_num:]
+            # batch_latency_avg = np.average(batch_latencies)
+            # latency_avg = batch_latency_avg / batch_size
+            # fpses = fpses[skip_batch_num:]
+            # fps_avg = np.average(fpses)
+            # infer_total_time = time.time() - infer_start_time
+            # acc1_avg = np.mean(infer_accs1)
+            # acc5_avg = np.mean(infer_accs5)
+            # _logger.info('Total inference run time: {:.2f} s'.format(
+            #     infer_total_time))
 
             # return outputs, acc1_avg, acc5_avg, fps_avg, latency_avg
             return
@@ -453,6 +451,7 @@ class TestQatInt8Comparison(unittest.TestCase):
         # self._summarize_performance(fp32_fps, fp32_lat, int8_fps, int8_lat)
         # self._compare_accuracy(fp32_acc1, fp32_acc5, int8_acc1, int8_acc5,
         #                        acc_diff_threshold)
+
 
 if __name__ == '__main__':
     global test_case_args
