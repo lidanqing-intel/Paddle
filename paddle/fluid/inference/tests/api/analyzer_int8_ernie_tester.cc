@@ -31,68 +31,36 @@ void SetConfig(AnalysisConfig *cfg) {
 }
 
 template <typename T>
-void GetValueFromStream(std::stringstream *ss, T *t) {
-  (*ss) >> (*t);
-}
-
-template <>
-void GetValueFromStream<std::string>(std::stringstream *ss, std::string *t) {
-  *t = ss->str();
-}
-
-// Split string to vector
-template <typename T>
-void Split(const std::string &line, char sep, std::vector<T> *v) {
-  std::stringstream ss;
-  T t;
-  for (auto c : line) {
-    if (c != sep) {
-      ss << c;
-    } else {
-      GetValueFromStream<T>(&ss, &t);
-      v->push_back(std::move(t));
-      ss.str({});
-      ss.clear();
-    }
-  }
-
-  if (!ss.str().empty()) {
-    GetValueFromStream<T>(&ss, &t);
-    v->push_back(std::move(t));
-    ss.str({});
-    ss.clear();
-  }
-}
-
-template <typename T>
-constexpr paddle::PaddleDType GetPaddleDType();
-
-template <>
-constexpr paddle::PaddleDType GetPaddleDType<int64_t>() {
-  return paddle::PaddleDType::INT64;
-}
-
-template <>
-constexpr paddle::PaddleDType GetPaddleDType<float>() {
-  return paddle::PaddleDType::FLOAT32;
+static void Split2DType(const std::string &str, char sep, std::vector<T> *v) {
+  std::vector<std::string> pieces;
+  split(str, sep, &pieces);
+  std::transform(pieces.begin(), pieces.end(), std::back_inserter(*v),
+                 [](const std::string &v) {
+                   return convert<T>(v, [](const std::string &item) {
+                     return std::stoll(item);
+                   });
+                 });
 }
 
 // Parse tensor from string
 template <typename T>
-bool ParseTensor(const std::string &field, paddle::PaddleTensor *tensor) {
+void ParseTensor(const std::string &field, paddle::PaddleTensor *tensor) {
   std::vector<std::string> data;
-  Split(field, ':', &data);
-  if (data.size() < 2) return false;
 
-  std::string shape_str = data[0];
+  split(field, ':', &data);
+  if (data.size() < 2) {
+    LOG(ERROR) << "size of each tensor string data should be no shorter than 2 "
+                  "shape:data !";
+    return;
+  }
 
   std::vector<int> shape;
-  Split(shape_str, ' ', &shape);
+  Split2DType<int>(data[0], ' ', &shape);
 
   std::string mat_str = data[1];
 
   std::vector<T> mat;
-  Split(mat_str, ' ', &mat);
+  Split2DType<T>(mat_str, ' ', &mat);
 
   tensor->shape = shape;
   auto size =
@@ -101,18 +69,19 @@ bool ParseTensor(const std::string &field, paddle::PaddleTensor *tensor) {
   tensor->data.Resize(size);
   std::copy(mat.begin(), mat.end(), static_cast<T *>(tensor->data.data()));
   tensor->dtype = GetPaddleDType<T>();
-
-  return true;
 }
 
+// data: src_ids ;  pos_ids ; sent_ids ; input_mask
 // Parse input tensors from string
 bool ParseLine(const std::string &line,
                std::vector<paddle::PaddleTensor> *tensors) {
   std::vector<std::string> fields;
-  Split(line, ';', &fields);
+  split(line, ';', &fields);
 
-  // if (fields.size() != 7) return false;
-
+  if (fields.size() < 4) {
+    LOG(ERROR) << "fields.size() should be no shorter than 7";
+    return false;
+  }
   tensors->clear();
   tensors->reserve(4);
 
@@ -153,18 +122,18 @@ bool LoadInputData(std::vector<std::vector<paddle::PaddleTensor>> *inputs) {
   std::ifstream fin(FLAGS_infer_data);
   std::string line;
 
-  int lineno = 0;
+  int linenum = 0;
   while (std::getline(fin, line)) {
     std::vector<paddle::PaddleTensor> feed_data;
     if (!ParseLine(line, &feed_data)) {
-      LOG(ERROR) << "Parse line[" << lineno << "] error!";
+      LOG(ERROR) << "Parse line[" << linenum << "] error!";
     } else {
       inputs->push_back(std::move(feed_data));
     }
-    lineno++;
+    linenum++;
   }
 
-  LOG(INFO) << "Load " << lineno << " samples from " << FLAGS_infer_data;
+  LOG(INFO) << "Load " << linenum << " samples from " << FLAGS_infer_data;
   return true;
 }
 

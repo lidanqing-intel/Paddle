@@ -198,6 +198,12 @@ class TestQatInt8Comparison(unittest.TestCase):
 
             inference_program = graph.to_program()
 
+            if test_case_args.save_model:
+                with fluid.scope_guard(inference_scope):
+                    fluid.io.save_inference_model(
+                        'transformed_qat_int8_model', feed_target_names,
+                        fetch_targets, exe, inference_program)
+
             dshape = [3, 224, 224]
             outputs = []
             infer_accs1 = []
@@ -255,12 +261,6 @@ class TestQatInt8Comparison(unittest.TestCase):
             acc5_avg = np.mean(infer_accs5)
             _logger.info('Total inference run time: {:.2f} s'.format(
                 infer_total_time))
-
-            if test_case_args.save_model:
-                with fluid.scope_guard(inference_scope):
-                    fluid.io.save_inference_model(
-                        'transformed_qat_int8_model', feed_target_names,
-                        fetch_targets, exe, inference_program)
 
             return outputs, acc1_avg, acc5_avg, fps_avg, latency_avg
 

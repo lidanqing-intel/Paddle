@@ -68,7 +68,6 @@ class TensorReader {
 
 std::shared_ptr<std::vector<PaddleTensor>> GetWarmupData(
     const std::vector<std::vector<PaddleTensor>> &test_data,
-    bool with_label = FLAGS_with_label,
     int num_images = FLAGS_warmup_batch_size) {
   int test_data_batch_size = test_data[0][0].shape[0];
   auto iterations = test_data.size();
@@ -77,17 +76,18 @@ std::shared_ptr<std::vector<PaddleTensor>> GetWarmupData(
       "The requested quantization warmup data size " +
           std::to_string(num_images) + " is bigger than all test data size.");
 
-  // You could let in-place move construction to occur:
-  // vec.emplace_back(std::make_shared<int>(42));
-  std::vector<PaddleTensor> warmup_data_vec;
-
   PaddleTensor images;
   images.name = "image";
   images.shape = {num_images, 3, 224, 224};
   images.dtype = PaddleDType::FLOAT32;
   images.data.Resize(sizeof(float) * num_images * 3 * 224 * 224);
 
-  // This part needs to be changed.
+  PaddleTensor labels;
+  labels.name = "label";
+  labels.shape = {num_images, 1};
+  labels.dtype = PaddleDType::INT64;
+  labels.data.Resize(sizeof(int64_t) * num_images);
+
   for (int i = 0; i < num_images; i++) {
     auto batch = i / test_data_batch_size;
     auto element_in_batch = i % test_data_batch_size;
@@ -95,36 +95,19 @@ std::shared_ptr<std::vector<PaddleTensor>> GetWarmupData(
                     element_in_batch * 3 * 224 * 224,
                 3 * 224 * 224,
                 static_cast<float *>(images.data.data()) + i * 3 * 224 * 224);
-  }
-  // warmup_data.emplace_back(images);
-  warmup_data_vec.push_back(std::move(images));
 
-  if (with_label) {
-    PADDLE_ENFORCE_EQ(static_cast<size_t>(test_data[0].size()), size_t{2},
-                      "The requested quantization warmup data size " +
-                          std::to_string(num_images) +
-                          " is bigger than all test data size.");
-    PaddleTensor labels;
-    labels.name = "label";
-    labels.shape = {num_images, 1};
-    labels.dtype = PaddleDType::INT64;
-    labels.data.Resize(sizeof(int64_t) * num_images);
-
-    for (int i = 0; i < num_images; i++) {
-      auto batch = i / test_data_batch_size;
-      auto element_in_batch = i % test_data_batch_size;
-      std::copy_n(static_cast<int64_t *>(test_data[batch][1].data.data()) +
-                      element_in_batch,
-                  1, static_cast<int64_t *>(labels.data.data()) + i);
-    }
-    // warmup_data.emplace_back(labels);
-    warmup_data_vec.push_back(std::move(labels));
+    std::copy_n(static_cast<int64_t *>(test_data[batch][1].data.data()) +
+                    element_in_batch,
+                1, static_cast<int64_t *>(labels.data.data()) + i);
   }
-  return std::make_shared<std::vector<PaddleTensor>>(warmup_data_vec);
+
+  auto warmup_data = std::make_shared<std::vector<PaddleTensor>>(2);
+  (*warmup_data)[0] = std::move(images);
+  (*warmup_data)[1] = std::move(labels);
+  return warmup_data;
 }
 
 void SetInput(std::vector<std::vector<PaddleTensor>> *inputs,
-              bool with_label = FLAGS_with_label,
               int32_t batch_size = FLAGS_batch_size) {
   std::ifstream file(FLAGS_infer_data, std::ios::binary);
   if (!file) {
@@ -138,31 +121,24 @@ void SetInput(std::vector<std::vector<PaddleTensor>> *inputs,
   std::vector<int> image_batch_shape{batch_size, 3, 224, 224};
   std::vector<int> label_batch_shape{batch_size, 1};
   auto images_offset_in_file = static_cast<size_t>(file.tellg());
+  auto labels_offset_in_file =
+      images_offset_in_file + sizeof(float) * total_images * 3 * 224 * 224;
 
   TensorReader<float> image_reader(file, images_offset_in_file,
                                    image_batch_shape, "image");
+  TensorReader<int64_t> label_reader(file, labels_offset_in_file,
+                                     label_batch_shape, "label");
 
   auto iterations_max = total_images / batch_size;
   auto iterations = iterations_max;
   if (FLAGS_iterations > 0 && FLAGS_iterations < iterations_max) {
     iterations = FLAGS_iterations;
   }
-
-  auto labels_offset_in_file =
-      images_offset_in_file + sizeof(float) * total_images * 3 * 224 * 224;
-
-  TensorReader<int64_t> label_reader(file, labels_offset_in_file,
-                                     label_batch_shape, "label");
-
   for (auto i = 0; i < iterations; i++) {
     auto images = image_reader.NextBatch();
-    std::vector<PaddleTensor> tmp_vec;
-    tmp_vec.push_back(std::move(images));
-    if (with_label) {
-      auto labels = label_reader.NextBatch();
-      tmp_vec.push_back(std::move(labels));
-    }
-    inputs->push_back(std::move(tmp_vec));
+    auto labels = label_reader.NextBatch();
+    inputs->emplace_back(
+        std::vector<PaddleTensor>{std::move(images), std::move(labels)});
   }
 }
 
@@ -179,16 +155,18 @@ TEST(Analyzer_int8_image_classification, quantization) {
 
   // prepare warmup batch from input data read earlier
   // warmup batch size can be different than batch size
-
   std::shared_ptr<std::vector<PaddleTensor>> warmup_data =
       GetWarmupData(input_slots_all);
+
+  std::cout << "warm_up data size is " << warmup_data.size()
+            << " and warmup_data[0].size is " << warmup_data[0].size();
 
   // configure quantizer
   q_cfg.EnableMkldnnQuantizer();
   q_cfg.mkldnn_quantizer_config()->SetWarmupData(warmup_data);
   q_cfg.mkldnn_quantizer_config()->SetWarmupBatchSize(FLAGS_warmup_batch_size);
 
-  CompareQuantizedAndAnalysis(&cfg, &q_cfg, input_slots_all, FLAGS_with_label);
+  CompareQuantizedAndAnalysis(&cfg, &q_cfg, input_slots_all);
 }
 
 }  // namespace analysis
