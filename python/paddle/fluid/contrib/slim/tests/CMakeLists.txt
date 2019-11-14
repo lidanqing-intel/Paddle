@@ -50,7 +50,7 @@ function(save_qat2_int8_model target qat_model_dir qat_int8_save_model_dir test_
 		COMMAND ${CMAKE_COMMAND} -E env FLAGS_init_allocated_mem=true FLAGS_cudnn_deterministic=true
 		FLAGS_cpu_deterministic=true PYTHONPATH=${PADDLE_BINARY_DIR}/python
 		${PYTHON_EXECUTABLE} -u ${test_script}
-		 --qat_model_path ${qat_model_dir}
+                --qat_model_path ${qat_model_dir}/float
 	         --save_model_path ${qat_int8_save_model_dir}
 	 	WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 	 add_dependencies(${target} paddle_python)
@@ -176,10 +176,7 @@ if(LINUX AND WITH_MKLDNN)
 
 	set(QAT_INT8_RESNET50_MODEL_DIR "${QAT_DATA_DIR}/ResNet50_QAT_INT8")
 	set(SAVE_QAT_INT8_MODEL_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/qat_save_model.py")
-        set(tmp_model "/home/lidanqing/data/qat_models_0927/resnet50")
-	save_qat2_int8_model(save_qat2_int8_resnet50_mkldnn ${tmp_model} ${QAT_INT8_RESNET50_MODEL_DIR} ${SAVE_QAT_INT8_MODEL_SCRIPT} true)
-
-
+        save_qat2_int8_model(save_qat2_int8_resnet50_mkldnn ${QAT2_RESNET50_MODEL_DIR}/ResNet50_qat_perf ${QAT_INT8_RESNET50_MODEL_DIR} ${SAVE_QAT_INT8_MODEL_SCRIPT} true)
 
         set(QAT2_MOBILENETV1_MODEL_DIR "${QAT_DATA_DIR}/MobileNet_qat_perf")
         if (NOT EXISTS ${QAT2_MOBILENETV1_MODEL_DIR})
