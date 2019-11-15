@@ -33,10 +33,15 @@ def parse_args():
     parser.add_argument(
         '--qat_model_path', type=str, default='', help='A path to a QAT model.')
     parser.add_argument(
-        '--save_model_path',
+        '--qat_fp32_model_path',
         type=str,
         default='',
-        help='Saved transformed model to the path')
+        help='Saved passes optimized fp32 model')
+    parser.add_argument(
+        '--qat_int8_model_path',
+        type=str,
+        default='',
+        help='Saved passes optimized INT8 model')
 
     test_args, args = parser.parse_known_args(namespace=unittest)
     return test_args, sys.argv[:1] + args
@@ -59,12 +64,19 @@ def save_transformed_model(args):
         graph = IrGraph(core.Graph(inference_program.desc), for_test=True)
         transform_to_mkldnn_int8_pass = FakeQAT2MkldnnINT8PerfPass(
             _scope=inference_scope, _place=place, _core=core)
-        graph = transform_to_mkldnn_int8_pass.apply(graph)
 
-        inference_program = graph.to_program()
-        if args.save_model_path:
+        if args.qat_int8_model_path:
+            graph = transform_to_mkldnn_int8_pass.apply(graph)
+            inference_program = graph.to_program()
             with fluid.scope_guard(inference_scope):
-                fluid.io.save_inference_model(args.save_model_path,
+                fluid.io.save_inference_model(args.qat_int8_model_path,
+                                              feed_target_names, fetch_targets,
+                                              exe, inference_program)
+        if args.qat_fp32_model_path:
+            graph = transform_to_mkldnn_int8_pass.apply_fp32_passes(graph)
+            inference_program = graph.to_program()
+            with fluid.scope_guard(inference_scope):
+                fluid.io.save_inference_model(args.qat_fp32_model_path,
                                               feed_target_names, fetch_targets,
                                               exe, inference_program)
 
