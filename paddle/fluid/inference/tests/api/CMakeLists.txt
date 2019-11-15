@@ -129,9 +129,8 @@ function(inference_analysis_api_qat_test_run TARGET_NAME test_binary fp32_model_
              --infer_data=${data_path}
              --batch_size=50
              --paddle_num_threads=${CPU_NUM_THREADS_ON_CI}
+             --with_label=false
 	     --iterations=2)
-
-            
   add_dependencies(test_analyzer_qat_int8_resnet50 save_qat2_int8_resnet50_mkldnn)
 endfunction()
 
