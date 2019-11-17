@@ -106,50 +106,6 @@ function(inference_qat_int8_test target model_dir data_dir test_script use_mkldn
                  --acc_diff_threshold 0.1)
 endfunction()
 
-function(save_qat2_int8_model target qat_model_dir qat_int8_save_model_dir test_script)
-	add_custom_target(${target} ALL
-		COMMAND ${CMAKE_COMMAND} -E env FLAGS_init_allocated_mem=true FLAGS_cudnn_deterministic=true
-		FLAGS_cpu_deterministic=true PYTHONPATH=${PADDLE_BINARY_DIR}/python
-		${PYTHON_EXECUTABLE} -u ${test_script}
-                --qat_model_path ${qat_model_dir}/float
-	         --save_model_path ${qat_int8_save_model_dir}
-	 	WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
-	 add_dependencies(${target} paddle_python)
-endfunction()
-
-function(inference_analysis_api_qat_test_run TARGET_NAME test_binary fp32_model_dir qat_int8_save_model_dir data_path)
-       add_executable(${TARGET_NAME} ALL 
-	COMMAND ${test_binary}
-        ARGS --fp32_model=${fp32_model_dir}
-             --int8_model=${qat_int8_save_model_dir}\
-             --infer_data=${data_path}
-             --batch_size=50
-             --paddle_num_threads=${CPU_NUM_THREADS_ON_CI}
-             --with_label=false
-	     --iterations=2)
-  add_dependencies(test_analyzer_qat_int8_resnet50 padd)
-endfunction()
-
-set(QAT_PERF_TEST_APP_SRC  "${CMAKE_CURRENT_SOURCE_DIR}/analyzer_qat_image_classification_tester.cc")
-function(inference_analysis_api_qat_test_run TARGET_NAME)
-  if(WITH_TESTING)
-    set(oneValueArgs "")
-    set(multiValueArgs SRCS DEPS)
-    cmake_parse_arguments(cc_test "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
-    add_executable(${TARGET_NAME} ${QAT_PERF_TEST_APP_SRC})
-    if(WIN32)
-      if("${cc_test_DEPS};" MATCHES "python;")
-        list(REMOVE_ITEM cc_test_DEPS python)
-        target_link_libraries(${TARGET_NAME} ${PYTHON_LIBRARIES})
-      endif()
-    endif(WIN32)
-    get_property(os_dependency_modules GLOBAL PROPERTY OS_DEPENDENCY_MODULES)
-    target_link_libraries(${TARGET_NAME} ${cc_test_DEPS} ${os_dependency_modules} paddle_gtest_main lod_tensor memory gtest gflags glog)
-    add_dependencies(${TARGET_NAME} ${cc_test_DEPS} paddle_gtest_main lod_tensor memory gtest gflags glog)
-    common_link(${TARGET_NAME})
-  endif()
-endfunction()
-
 if(NOT APPLE AND WITH_MKLML)
     # RNN1
     set(RNN1_INSTALL_DIR "${INFERENCE_DEMO_INSTALL_DIR}/rnn1")
@@ -344,20 +300,9 @@ if(WITH_MKLDNN)
   
   set(QAT_DATA_DIR "${INFERENCE_DEMO_INSTALL_DIR}/int8v2")
   set(QAT_IMG_CLASS_TEST_APP "test_analyzer_qat_image_classification")
-  set(QAT_IMG_CLASS_TEST_APP_SRC "analyzer_qat_image_classification_tester.cc")
 
   # build test binary to be used in subsequent tests
   inference_analysis_api_test_build(${QAT_IMG_CLASS_TEST_APP} ${QAT_IMG_CLASS_TEST_APP_SRC})
-
-  # ResNet50 FP32 vs. QAT INT8
-  set(QAT2_RESNET50_MODEL_DIR "${QAT_DATA_DIR}/ResNet50_qat_perf/ResNet50_qat_perf")
-  set(QAT_INT8_RESNET50_MODEL_DIR "${QAT_DATA_DIR}/ResNet50_QAT_INT8")
-  #  download_qat_data(${QAT_RESNET50_MODEL_DIR} "ResNet50_qat_model.tar.gz" )
-  set(QAT_RESNET50_MODEL_DIR "/home/lidanqing/data/qat_models_0927/resnet50" )
-
-  #  set(SAVE_QAT_INT8_MODEL_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/qat_save_model.py")
-  # prepare_qat_int8_model(${QAT_RESNET50_MODEL_DIR} ${QAT_INT8_RESNET50_MODEL_DIR} ${SAVE_QAT_INT8_MODEL_SCRIPT})
-  inference_analysis_api_qat_test_run(test_analyzer_qat_int8_resnet50 ${QAT_IMG_CLASS_TEST_APP} ${QAT2_RESNET50_MODEL_DIR}/float ${QAT_INT8_RESNET50_MODEL_DIR} ${IMAGENET_DATA_PATH})
 
 endif()
 
