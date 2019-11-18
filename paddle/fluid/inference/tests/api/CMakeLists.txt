@@ -93,7 +93,6 @@ function(prepare_qat_int8_model target qat_model_dir qat_int8_save_model_dir)
 
 endfunction()
 
-
 function(inference_qat_int8_test target model_dir data_dir test_script use_mkldnn)
     py_test(${target} SRCS ${test_script}
             ENVS FLAGS_OMP_NUM_THREADS=${CPU_NUM_THREADS_ON_CI}
