@@ -169,7 +169,7 @@ void SetInput(std::vector<std::vector<PaddleTensor>> *inputs,
   }
 }
 
-TEST(Analyzer_qat_image_classification, quantization) {
+TEST(Analyzer_qat_image_classification, DISABLED_performance_benchmark) {
   AnalysisConfig fp32_cfg;
   SetFP32Config(&fp32_cfg);
 

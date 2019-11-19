@@ -46,15 +46,11 @@ function(inference_qat2_int8_test target model_dir data_dir test_script use_mkld
 endfunction()
 
 function(save_qat2_int8_model target qat_model_dir qat_fp32_save_model_dir qat_int8_save_model_dir test_script)
-	add_custom_target(${target} ALL
-		COMMAND ${CMAKE_COMMAND} -E env FLAGS_init_allocated_mem=true FLAGS_cudnn_deterministic=true
-		FLAGS_cpu_deterministic=true PYTHONPATH=${PADDLE_BINARY_DIR}/python
-		${PYTHON_EXECUTABLE} -u ${test_script}
-                --qat_model_path ${qat_model_dir}/float
-	        --qat_fp32_model_path ${qat_fp32_save_model_dir}
-	        --qat_int8_model_path ${qat_int8_save_model_dir}
-	 	WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
-	 add_dependencies(${target} paddle_python)
+    py_test(${target} SRCS ${test_script}
+        ARGS
+            --qat_model_path ${qat_model_dir}/float
+            --qat_fp32_model_path ${qat_fp32_save_model_dir}
+            --qat_int8_model_path ${qat_int8_save_model_dir})
 endfunction()
 
 if(WIN32)
