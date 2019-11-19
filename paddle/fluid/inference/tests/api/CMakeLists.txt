@@ -322,7 +322,7 @@ if(WITH_MKLDNN)
   set(QAT_RESNET50_MODEL_DIR "/home/lidanqing/data/qat_models_0927/resnet50" )
 
   #  set(SAVE_QAT_INT8_MODEL_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/qat_save_model.py")
-  inference_analysis_api_qat_test_run(test_analyzer_qat_int8_resnet50 ${QAT_IMG_CLASS_TEST_APP} ${QAT2_RESNET50_MODEL_DIR}/float ${QAT_INT8_RESNET50_MODEL_DIR} ${IMAGENET_DATA_PATH})
+  inference_analysis_api_qat_test_run(test_analyzer_qat_performance_benchmark ${QAT_IMG_CLASS_TEST_APP} ${QAT2_RESNET50_MODEL_DIR}/float ${QAT_INT8_RESNET50_MODEL_DIR} ${IMAGENET_DATA_PATH})
 
 endif()
 
