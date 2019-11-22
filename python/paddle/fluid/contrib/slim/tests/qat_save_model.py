@@ -31,17 +31,22 @@ from paddle.fluid import core
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        '--qat_model_path', type=str, default='', help='A path to a QAT model.')
+        '--qat_model_path',
+        type=str,
+        required=True,
+        help='Original QAT model path.')
     parser.add_argument(
         '--qat_fp32_model_path',
         type=str,
         default='',
-        help='Saved fused fp32 model')
+        help='Transformed QAT fp32 model path. If it is not set, transformed qat_fp32 model will not be saved'
+    )
     parser.add_argument(
         '--qat_int8_model_path',
         type=str,
         default='',
-        help='Saved fused and quantized INT8 model')
+        help='Transformed QAT int8 model. If it is not set, transformed qat_int8 model will not be saved'
+    )
 
     test_args, args = parser.parse_known_args(namespace=unittest)
     return test_args, sys.argv[:1] + args
@@ -72,8 +77,8 @@ def save_transformed_model(saved_type, original_path, saved_path):
         with fluid.scope_guard(inference_scope):
             fluid.io.save_inference_model(saved_path, feed_target_names,
                                           fetch_targets, exe, inference_program)
-        print("Success! QAT_{0} model can be found at {1}\n".format(saved_type,
-                                                                    saved_path))
+        print("\nSuccess! Transformed QAT {0} model can be found at {1}\n".
+              format(saved_type, saved_path))
 
 
 if __name__ == '__main__':
