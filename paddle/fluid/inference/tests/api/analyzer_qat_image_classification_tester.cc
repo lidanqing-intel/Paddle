@@ -21,14 +21,6 @@ namespace paddle {
 namespace inference {
 namespace analysis {
 
-void SetFP32Config(AnalysisConfig *cfg) {
-  cfg->SetModel(FLAGS_fp32_model);
-  cfg->DisableGpu();
-  cfg->SwitchIrOptim(false);
-  cfg->SwitchSpecifyInputNames();
-  cfg->SetCpuMathLibraryNumThreads(FLAGS_paddle_num_threads);
-  cfg->EnableMKLDNN();
-}
 
 void SetINT8Config(AnalysisConfig *cfg) {
   cfg->SetModel(FLAGS_int8_model);
@@ -118,8 +110,6 @@ void SetInput(std::vector<std::vector<PaddleTensor>> *inputs,
 }
 
 TEST(Analyzer_qat_image_classification, quantization) {
-  AnalysisConfig fp32_cfg;
-  SetFP32Config(&fp32_cfg);
 
   AnalysisConfig int8_cfg;
   SetINT8Config(&int8_cfg);
@@ -127,9 +117,14 @@ TEST(Analyzer_qat_image_classification, quantization) {
   // read data from file and prepare batches with test data
   std::vector<std::vector<PaddleTensor>> input_slots_all;
   SetInput(&input_slots_all);
-
-  CompareAnalysisAndAnalysis(&fp32_cfg, &int8_cfg, input_slots_all,
-                             FLAGS_with_label, 1);
+  // auto *cfg2 = reinterpret_cast<const PaddlePredictor::Config *>(int8_cfg);
+  // PrintConfig(cfg2, true);
+  // std::vector<std::vector<PaddleTensor>> int8_outputs;
+  // float sample_latency_int8{-1};
+  // TestOneThreadPrediction(cfg2, input_slots_all, &int8_outputs, true, VarType::INT8,
+  //                           &sample_latency_int8);
+  // SummarizePerformance("INT8 QAT model performance", sample_latency_int8);
+  ComputeAnalysis(int8_cfg, input_slots_all, false, 1);
 }
 
 }  // namespace analysis
