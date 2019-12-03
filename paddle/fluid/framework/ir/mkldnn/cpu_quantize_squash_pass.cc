@@ -52,7 +52,7 @@ void CPUQuantizeSquashPass::FindNodesToKeep(
 void CPUQuantizeSquashPass::ReshapeTransposeScaleSquash(
     Graph* graph) const{
     GraphPatternDetector gpd;
-    patterns::Reshape2Transpose2Scale reshape_transpose_scale_pattern{gpd.mutable_pattern(), "reshape_transpose_scale"};  
+    patterns::ReshapeTransposeScale reshape_transpose_scale_pattern{gpd.mutable_pattern(), "reshape_transpose_scale"};  
     reshape_transpose_scale_pattern();
 
     int found_reshape_transpose_scale_count = 0;
