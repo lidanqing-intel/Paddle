@@ -60,12 +60,10 @@ class CPUQuantizeSquashPass : public FusePassBase {
   */
   void ConvDequantSquash(Graph* graph) const;
 
-  // squash fc with dequant
+   /*
+   * // squash fc with dequant
+   */
   void FcDequantSquash(Graph* graph) const;
-
-  // Squash reshape transpose scale to reshape transpose
-   
-  void ReshapeTransposeScaleSquash(Graph* graph) const;
 
   const std::string name_scope_{"squash"};
 };

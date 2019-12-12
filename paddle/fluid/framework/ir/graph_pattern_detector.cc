@@ -898,6 +898,7 @@ PDNode *patterns::FC::operator()(paddle::framework::ir::PDNode *x,
   }
 }
 
+// reshape_op->reshape_out->transpose_op->transpose_out->scale->scale_out
 PDNode *patterns::ReshapeTransposeScale::operator()() {
   // Create Operators
   auto reshape_in = pattern->NewNode(reshape_in_repr())->AsInput()->assert_is_op_input("reshape2", "X");
@@ -909,7 +910,7 @@ PDNode *patterns::ReshapeTransposeScale::operator()() {
   auto transpose_out = pattern->NewNode(transpose_out_repr())->AsOutput()->assert_is_op_output("transpose2", "Out");
   auto scale_out = pattern->NewNode(scale_out_repr())->AsOutput()->assert_is_op_output("scale", "Out");
 
-  // reshape_op->reshape_out->transpose_op->transpose_out->scale->scale_out
+  
   reshape_op->LinksFrom({reshape_in}).LinksTo({reshape_out});
   transpose_op->LinksFrom({reshape_out}).LinksTo({transpose_out});
   scale_op->LinksFrom({transpose_out}).LinksTo({scale_out});
