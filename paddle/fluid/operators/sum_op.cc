@@ -104,6 +104,27 @@ class SumOp : public framework::OperatorWithKernel {
     ctx->ShareLoD("X", /*->*/ "Out");
   }
 
+#ifdef PADDLE_WITH_MKLDNN
+  static bool CanMkldnnSumKernelUsed(const framework::ExecutionContext& ctx) {
+    auto in_vars = ctx.MultiInputVar("X");
+    auto out_var = ctx.OutputVar("Out");
+    if (!in_vars.empty()){
+      if (out_var->IsType<framework::LoDTensor>()){
+        for (size_t i = 0; i < in_vars.size(); i++){
+          if(!in_vars[i]->IsType<LoDTensor>()){
+            return false;
+          }
+          auto& input_it = in_vars[i]->Get<LoDTensor>();
+          if(input_it.layout()!=framework::DataLayout::kMKLDNN) return false;
+          if(input_it.format()==MKLDNNMemoryFormat::undef) return false;
+        }
+        return true;
+      }
+    }
+    return false;
+  }
+#endif
+
  protected:
   framework::OpKernelType GetExpectedKernelType(
       const framework::ExecutionContext& ctx) const override {
@@ -114,10 +135,13 @@ class SumOp : public framework::OperatorWithKernel {
     framework::DataLayout layout{framework::DataLayout::kAnyLayout};
 
 #ifdef PADDLE_WITH_MKLDNN
-    if (library == framework::LibraryType::kPlain &&
-        platform::CanMKLDNNBeUsed(ctx)) {
-      library = framework::LibraryType::kMKLDNN;
-      layout = framework::DataLayout::kMKLDNN;
+    if (library == framework::LibraryType::kPlain && platform::CanMKLDNNBeUsed(ctx)) {
+      bool can_use_mkldnn_kernel = CanMkldnnSumKernelUsed(ctx);
+      if(can_use_mkldnn_kernel){
+        return framework::OpKernelType(framework::proto::VarType::FP32, ctx.GetPlace(),
+                                        framework::DataLayout::kMKLDNN,
+                                        framework::LibraryType::kMKLDNN);
+      }
     }
 #endif
 
