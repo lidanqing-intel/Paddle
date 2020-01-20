@@ -108,19 +108,25 @@ class SumOp : public framework::OperatorWithKernel {
   static bool CanMkldnnSumKernelUsed(const framework::ExecutionContext& ctx) {
     auto in_vars = ctx.MultiInputVar("X");
     auto out_var = ctx.OutputVar("Out");
-    if (!in_vars.empty()){
-      if (out_var->IsType<framework::LoDTensor>()){
-        for (size_t i = 0; i < in_vars.size(); i++){
-          if(!in_vars[i]->IsType<LoDTensor>()){
-            return false;
-          }
-          auto& input_it = in_vars[i]->Get<LoDTensor>();
-          if(input_it.layout()!=framework::DataLayout::kMKLDNN) return false;
-          if(input_it.format()==MKLDNNMemoryFormat::undef) return false;
+    if (!in_vars.empty() && out_var->IsType<framework::LoDTensor>()){
+      for (size_t i = 0; i < in_vars.size(); i++){
+        if(!in_vars[i]->IsType<LoDTensor>()){
+          std::cout<<"Here is the problem 1"<<std::endl;
+          return false;
         }
-        return true;
+        auto& input_it = in_vars[i]->Get<LoDTensor>();
+        if(input_it.layout()!=framework::DataLayout::kMKLDNN){
+          std::cout<<"The input_it layout is "<< input_it.layout() <<"Here is the problem 2"<<std::endl;
+          return false;
+        } 
+        if(input_it.format()==MKLDNNMemoryFormat::undef){
+          std::cout<<"Here is the problem 3"<<std::endl;
+          return false;
+        } 
       }
+      return true;
     }
+    std::cout<<"Here is the problem 4"<<std::endl;
     return false;
   }
 #endif
@@ -135,12 +141,16 @@ class SumOp : public framework::OperatorWithKernel {
     framework::DataLayout layout{framework::DataLayout::kAnyLayout};
 
 #ifdef PADDLE_WITH_MKLDNN
+
     if (library == framework::LibraryType::kPlain && platform::CanMKLDNNBeUsed(ctx)) {
       bool can_use_mkldnn_kernel = CanMkldnnSumKernelUsed(ctx);
       if(can_use_mkldnn_kernel){
         return framework::OpKernelType(framework::proto::VarType::FP32, ctx.GetPlace(),
                                         framework::DataLayout::kMKLDNN,
                                         framework::LibraryType::kMKLDNN);
+      }
+      else{
+        std::cout<<"HERE!!! is shere I found I am not using mkldnn kernel."<<std::endl;
       }
     }
 #endif

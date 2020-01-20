@@ -75,6 +75,8 @@ class SumMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
     in_place = (input0.numel() > 0) && (input0.data<T>() == output_data);
 
     MKLDNNMemoryFormat input_format = input0.format();
+    framework::DataLayout input_layout = input0.layout();
+    std::cout<< "Input_layout is " << input_layout <<std::endl;
 
     for (size_t i = 0; i < in_vars.size(); i++) {
       auto& input_it = in_vars[i]->Get<LoDTensor>();

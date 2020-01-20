@@ -45,8 +45,6 @@ class TestSumMKLDNN(TestSumOp):
         # TODO(wangzhongpu): support mkldnn op in dygraph mode
         self.check_grad(['x0'], 'Out', check_dygraph=False)
 
-@skip_check_grad_ci(
-    reason="[Grad not implemented] Grad sum mkldnn op is not implemented yet.")
 class TestMKLDNNSumInplaceOp(unittest.TestCase):
     def setUp(self):
         self.op_type = "sum"
