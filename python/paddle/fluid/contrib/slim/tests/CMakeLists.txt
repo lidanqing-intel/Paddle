@@ -8,7 +8,7 @@ function(_inference_analysis_python_api_int8_test target model_dir data_path fil
         ARGS --infer_model ${model_dir}/model
              --infer_data ${data_path}
              --int8_model_save_path int8_models/${target}
-             --warmup_batch_size 100
+             --warmup_batch_size ${WARMUP_BATCH_SIZE}
              --batch_size 50)
 endfunction()
 
@@ -30,6 +30,11 @@ function(download_qat_model install_dir data_file)
     if (NOT EXISTS ${install_dir})
 	    inference_download_and_uncompress(${install_dir} ${INFERENCE_URL}/int8/QAT_models ${data_file})
     endif()
+endfunction()
+
+function(inference_analysis_python_api_int8_test_custom_warmup_batch_size target model_dir data_dir filename warmup_batch_size)
+    set(WARMUP_BATCH_SIZE ${warmup_batch_size})
+    inference_analysis_python_api_int8_test(${target} ${model_dir} ${data_dir} ${filename})
 endfunction()
 
 function(inference_qat_int8_image_classification_test target model_dir dataset_path test_script use_mkldnn)
