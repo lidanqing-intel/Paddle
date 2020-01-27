@@ -24,7 +24,7 @@ import time
 import paddle
 import paddle.fluid as fluid
 from paddle.fluid.framework import IrGraph
-from paddle.fluid.contrib.slim.quantization import FakeQAT2MkldnnINT8PerfPass
+from paddle.fluid.contrib.slim.quantization import Qat2Int8MkldnnPass
 from paddle.fluid import core
 
 
@@ -60,8 +60,11 @@ def transform_and_save_model(original_path, save_path, save_type):
              fetch_targets] = fluid.io.load_inference_model(original_path, exe,
                                                             'model', 'params')
 
-        transform_to_mkldnn_int8_pass = FakeQAT2MkldnnINT8PerfPass(
-            _scope=inference_scope, _place=place, _core=core)
+        transform_to_mkldnn_int8_pass = Qat2Int8MkldnnPass(
+            {'conv2d', 'pool2d'},
+            _scope=inference_scope,
+            _place=place,
+            _core=core)
 
         graph = IrGraph(core.Graph(inference_program.desc), for_test=True)
         if save_type == 'FP32':

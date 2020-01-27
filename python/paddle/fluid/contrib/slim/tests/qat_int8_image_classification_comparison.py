@@ -24,8 +24,8 @@ import time
 import paddle
 import paddle.fluid as fluid
 from paddle.fluid.framework import IrGraph
-from paddle.fluid.contrib.slim.quantization import FakeQAT2MkldnnINT8KernelPass
-from paddle.fluid.contrib.slim.quantization import FakeQAT2MkldnnINT8PerfPass
+from paddle.fluid.contrib.slim.quantization import QatInt8MkldnnPass
+from paddle.fluid.contrib.slim.quantization import Qat2Int8MkldnnPass
 from paddle.fluid import core
 
 logging.basicConfig(format='%(asctime)s-%(levelname)s: %(message)s')
@@ -74,10 +74,13 @@ def parse_args():
     return test_args, sys.argv[:1] + args
 
 
-class TestQatInt8Comparison(unittest.TestCase):
+class QatInt8ImageClassificationComparisonTest(unittest.TestCase):
     """
-    Test for accuracy comparison of QAT FP32 and INT8 inference.
+    Test for accuracy comparison of QAT FP32 and INT8 Image Classification inference.
     """
+
+    #  def __init__(self, debug):
+    #  self._debug = debug
 
     def _reader_creator(self, data_file='data.bin'):
         def reader():
@@ -182,14 +185,15 @@ class TestQatInt8Comparison(unittest.TestCase):
                 graph.draw('.', 'qat_orig', graph.all_op_nodes())
             if (transform_to_int8):
                 if (test_case_args.qat2):
-                    transform_to_mkldnn_int8_pass = FakeQAT2MkldnnINT8PerfPass(
+                    transform_to_mkldnn_int8_pass = Qat2Int8MkldnnPass(
+                        {'conv2d', 'pool2d'},
                         _scope=inference_scope,
                         _place=place,
                         _core=core,
                         _debug=self._debug)
                     graph = transform_to_mkldnn_int8_pass.apply(graph)
                 else:
-                    mkldnn_int8_pass = FakeQAT2MkldnnINT8KernelPass(
+                    mkldnn_int8_pass = QatInt8MkldnnPass(
                         _scope=inference_scope, _place=place)
                     graph = mkldnn_int8_pass.apply(graph)
 

@@ -26,7 +26,6 @@ function(inference_download_and_uncompress INSTALL_DIR URL FILENAME)
   message(STATUS "Download inference test stuff from ${URL}/${FILENAME}")
   string(REGEX REPLACE "[-%.]" "_" FILENAME_EX ${FILENAME})
   set(EXTERNAL_PROJECT_NAME "extern_inference_download_${FILENAME_EX}")
-  set(UNPACK_DIR "${INSTALL_DIR}/src/${EXTERNAL_PROJECT_NAME}")
   ExternalProject_Add(
       ${EXTERNAL_PROJECT_NAME}
       ${EXTERNAL_PROJECT_LOG_ARGS}

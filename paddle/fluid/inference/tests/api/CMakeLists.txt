@@ -11,13 +11,13 @@ function(download_data install_dir data_file)
 endfunction()
 
 function(download_int8_data install_dir data_file)
-    if (NOT EXISTS ${install_dir}/${data_file})
+    if (NOT EXISTS ${install_dir})
         inference_download_and_uncompress(${install_dir} ${INFERENCE_URL}/int8 ${data_file})
     endif()
 endfunction()
 
-function(download_qat_data install_dir data_file)
-    if (NOT EXISTS ${install_dir}/${data_file})
+function(download_qat_model install_dir data_file)
+    if (NOT EXISTS ${install_dir})
 	    inference_download_and_uncompress(${install_dir} ${INFERENCE_URL}/int8/QAT_models ${data_file})
     endif()
 endfunction()
@@ -37,12 +37,12 @@ function(inference_analysis_api_test target install_dir filename)
         ARGS --infer_model=${install_dir}/model --infer_data=${install_dir}/data.txt --refer_result=${install_dir}/result.txt)
 endfunction()
 
-function(inference_analysis_api_test_build TARGET_NAME filename)
+function(inference_api_int8_test_build TARGET_NAME filename)
 	inference_analysis_test_build(${TARGET_NAME} SRCS ${filename}
         EXTRA_DEPS ${INFERENCE_EXTRA_DEPS} benchmark)
 endfunction()
 
-function(inference_analysis_api_int8_test_run TARGET_NAME test_binary model_dir data_path)
+function(inference_api_int8_image_classification_test_run TARGET_NAME test_binary model_dir data_path)
 	inference_analysis_test_run(${TARGET_NAME}
 	COMMAND ${test_binary}
         ARGS --infer_model=${model_dir}/model
@@ -53,7 +53,7 @@ function(inference_analysis_api_int8_test_run TARGET_NAME test_binary model_dir 
 	     --iterations=2)
 endfunction()
 
-function(inference_analysis_api_object_dection_int8_test_run TARGET_NAME test_binary model_dir data_path)
+function(inference_api_int8_object_dection_test_run TARGET_NAME test_binary model_dir data_path)
 	inference_analysis_test_run(${TARGET_NAME}
 	COMMAND ${test_binary}
         ARGS --infer_model=${model_dir}/model
@@ -76,7 +76,7 @@ function(inference_analysis_api_test_with_fake_data_run TARGET_NAME test_binary 
              --disable_mkldnn_fc=${disable_fc}) 
 endfunction()
 
-function(inference_analysis_api_qat_test_run TARGET_NAME test_binary fp32_model_dir int8_model_dir data_path)
+function(inference_api_qat_image_classification_test_run TARGET_NAME test_binary fp32_model_dir int8_model_dir data_path)
     inference_analysis_test_run(${TARGET_NAME}
     COMMAND ${test_binary}
         ARGS --fp32_model=${fp32_model_dir}
@@ -221,96 +221,111 @@ if(WITH_MKLDNN)
 
   set(INT8_DATA_DIR "${INFERENCE_DEMO_INSTALL_DIR}/int8v2")
 
-  ### Image classification tests
-  set(IMAGENET_DATA_PATH "${INT8_DATA_DIR}/data.bin")
-  set(INT8_IMG_CLASS_TEST_APP "test_analyzer_int8_image_classification")
-  set(INT8_IMG_CLASS_TEST_APP_SRC "analyzer_int8_image_classification_tester.cc")
+  ## Image classification models
 
-  # download dataset if necessary
-  download_int8_data(${INT8_DATA_DIR} "imagenet_val_100_tail.tar.gz")
+  # ImageNet small dataset
+  # May be already downloaded for INT8 QAT unit tests
+  set(IMAGENET_DATA_ARCHIVE "imagenet_val_100_tail.tar.gz")
+  set(IMAGENET_DATA_DIR "${INFERENCE_DEMO_INSTALL_DIR}/imagenet")
+  set(IMAGENET_DATA_PATH "${IMAGENET_DATA_DIR}/data.bin")
+  download_int8_data(${IMAGENET_DATA_DIR} ${IMAGENET_DATA_ARCHIVE})
 
   # build test binary to be used in subsequent tests
-  inference_analysis_api_test_build(${INT8_IMG_CLASS_TEST_APP} ${INT8_IMG_CLASS_TEST_APP_SRC})
+  set(INT8_IMG_CLASS_TEST_APP "test_analyzer_int8_image_classification")
+  set(INT8_IMG_CLASS_TEST_APP_SRC "analyzer_int8_image_classification_tester.cc")
+  inference_api_int8_test_build(${INT8_IMG_CLASS_TEST_APP} ${INT8_IMG_CLASS_TEST_APP_SRC})
 
   # resnet50 int8
   set(INT8_RESNET50_MODEL_DIR "${INT8_DATA_DIR}/resnet50")
-  download_int8_data(${INT8_RESNET50_MODEL_DIR} "resnet50_int8_model.tar.gz" )
-  inference_analysis_api_int8_test_run(test_analyzer_int8_resnet50 ${INT8_IMG_CLASS_TEST_APP} ${INT8_RESNET50_MODEL_DIR} ${IMAGENET_DATA_PATH})
+  set(INT8_RESNET50_MODEL_ARCHIVE "resnet50_int8_model.tar.gz")
+  download_int8_data(${INT8_RESNET50_MODEL_DIR} ${INT8_RESNET50_MODEL_ARCHIVE})
+  inference_api_int8_image_classification_test_run(test_analyzer_int8_resnet50 ${INT8_IMG_CLASS_TEST_APP} ${INT8_RESNET50_MODEL_DIR} ${IMAGENET_DATA_PATH})
 
   # mobilenetv1 int8
   set(INT8_MOBILENETV1_MODEL_DIR "${INT8_DATA_DIR}/mobilenetv1")
-  download_int8_data(${INT8_MOBILENETV1_MODEL_DIR} "mobilenetv1_int8_model.tar.gz" )
-  inference_analysis_api_int8_test_run(test_analyzer_int8_mobilenetv1 ${INT8_IMG_CLASS_TEST_APP} ${INT8_MOBILENETV1_MODEL_DIR} ${IMAGENET_DATA_PATH})
+  set(INT8_MOBILENETV1_MODEL_ARCHIVE "mobilenetv1_int8_model.tar.gz")
+  download_int8_data(${INT8_MOBILENETV1_MODEL_DIR} ${INT8_MOBILENETV1_MODEL_ARCHIVE})
+  inference_api_int8_image_classification_test_run(test_analyzer_int8_mobilenetv1 ${INT8_IMG_CLASS_TEST_APP} ${INT8_MOBILENETV1_MODEL_DIR} ${IMAGENET_DATA_PATH})
  
   # mobilenetv2 int8
   set(INT8_MOBILENETV2_MODEL_DIR "${INT8_DATA_DIR}/mobilenetv2")
-  download_int8_data(${INT8_MOBILENETV2_MODEL_DIR} "mobilenet_v2_int8_model.tar.gz" )
-  inference_analysis_api_int8_test_run(test_analyzer_int8_mobilenetv2 ${INT8_IMG_CLASS_TEST_APP} ${INT8_MOBILENETV2_MODEL_DIR} ${IMAGENET_DATA_PATH})
+  set(INT8_MOBILENETV2_MODEL_ARCHIVE "mobilenet_v2_int8_model.tar.gz")
+  download_int8_data(${INT8_MOBILENETV2_MODEL_DIR} ${INT8_MOBILENETV2_MODEL_ARCHIVE})
+  inference_api_int8_image_classification_test_run(test_analyzer_int8_mobilenetv2 ${INT8_IMG_CLASS_TEST_APP} ${INT8_MOBILENETV2_MODEL_DIR} ${IMAGENET_DATA_PATH})
  
   # resnet101 int8
   # TODO(grygielski) Enable after MKL-DNN 1.0 merge
   set(INT8_RESNET101_MODEL_DIR "${INT8_DATA_DIR}/resnet101")
-  download_int8_data(${INT8_RESNET101_MODEL_DIR} "Res101_int8_model.tar.gz" )
-#   inference_analysis_api_int8_test_run(test_analyzer_int8_resnet101 ${INT8_IMG_CLASS_TEST_APP} ${INT8_RESNET101_MODEL_DIR} ${IMAGENET_DATA_PATH})
+  set(INT8_RESNET101_MODEL_ARCHIVE "Res101_int8_model.tar.gz")
+  download_int8_data(${INT8_RESNET101_MODEL_DIR} ${INT8_RESNET101_MODEL_ARCHIVE})
+#   inference_api_int8_image_classification_test_run(test_analyzer_int8_resnet101 ${INT8_IMG_CLASS_TEST_APP} ${INT8_RESNET101_MODEL_DIR} ${IMAGENET_DATA_PATH})
  
   # vgg16 int8
   # TODO(grygielski) Enable after MKL-DNN 1.0 merge
   set(INT8_VGG16_MODEL_DIR "${INT8_DATA_DIR}/vgg16")
-  download_int8_data(${INT8_VGG16_MODEL_DIR} "VGG16_int8_model.tar.gz" )
-#   inference_analysis_api_int8_test_run(test_analyzer_int8_vgg16 ${INT8_IMG_CLASS_TEST_APP} ${INT8_VGG16_MODEL_DIR} ${IMAGENET_DATA_PATH})
+  set(INT8_VGG16_MODEL_ARCHIVE "VGG16_int8_model.tar.gz")
+  download_int8_data(${INT8_VGG16_MODEL_DIR} ${INT8_VGG16_MODEL_ARCHIVE})
+#   inference_api_int8_image_classification_test_run(test_analyzer_int8_vgg16 ${INT8_IMG_CLASS_TEST_APP} ${INT8_VGG16_MODEL_DIR} ${IMAGENET_DATA_PATH})
  
   # vgg19 int8
   # TODO(grygielski) Enable after MKL-DNN 1.0 merge
   set(INT8_VGG19_MODEL_DIR "${INT8_DATA_DIR}/vgg19")
-  download_int8_data(${INT8_VGG19_MODEL_DIR} "VGG19_int8_model.tar.gz" )
-#   inference_analysis_api_int8_test_run(test_analyzer_int8_vgg19 ${INT8_IMG_CLASS_TEST_APP} ${INT8_VGG19_MODEL_DIR} ${IMAGENET_DATA_PATH})
+  set(INT8_VGG19_MODEL_ARCHIVE "VGG19_int8_model.tar.gz")
+  download_int8_data(${INT8_VGG19_MODEL_DIR} ${INT8_VGG19_MODEL_ARCHIVE})
+#   inference_api_int8_image_classification_test_run(test_analyzer_int8_vgg19 ${INT8_IMG_CLASS_TEST_APP} ${INT8_VGG19_MODEL_DIR} ${IMAGENET_DATA_PATH})
 
   # googlenet int8
   set(INT8_GOOGLENET_MODEL_DIR "${INT8_DATA_DIR}/googlenet")
-  download_int8_data(${INT8_GOOGLENET_MODEL_DIR} "GoogleNet_int8_model.tar.gz" )
-  inference_analysis_api_int8_test_run(test_analyzer_int8_googlenet ${INT8_IMG_CLASS_TEST_APP} ${INT8_GOOGLENET_MODEL_DIR} ${IMAGENET_DATA_PATH})
+  set(INT8_GOOGLENET_MODEL_ARCHIVE "GoogleNet_int8_model.tar.gz")
+  download_int8_data(${INT8_GOOGLENET_MODEL_DIR} ${INT8_GOOGLENET_MODEL_ARCHIVE})
+  inference_api_int8_image_classification_test_run(test_analyzer_int8_googlenet ${INT8_IMG_CLASS_TEST_APP} ${INT8_GOOGLENET_MODEL_DIR} ${IMAGENET_DATA_PATH})
 
-  ### Object detection models
-  set(PASCALVOC_DATA_PATH "${INT8_DATA_DIR}/pascalvoc_val_head_300.bin")
-  set(INT8_OBJ_DETECT_TEST_APP "test_analyzer_int8_object_detection")
-  set(INT8_OBJ_DETECT_TEST_APP_SRC "analyzer_int8_object_detection_tester.cc")
+  ## Object detection models
 
   # download dataset if necessary
-  download_int8_data(${INT8_DATA_DIR} "pascalvoc_val_head_300.tar.gz")
-
+  set(PASCALVOC_DATA_ARCHIVE "pascalvoc_val_head_300.tar.gz")
+  set(PASCALVOC_SMALL_DATA_ARCHIVE "pascalvoc_small.tar.gz")
+  set(PASCALVOC_DATA_DIR "${INFERENCE_DEMO_INSTALL_DIR}/pascalvoc")
+  set(PASCALVOC_DATA_PATH "${PASCALVOC_DATA_DIR}/pascalvoc_val_head_300.bin")
+  download_int8_data(${PASCALVOC_DATA_DIR} ${PASCALVOC_DATA_ARCHIVE})
   # download small demo set of pascalvoc for testing local userdata preprocessing
-  download_int8_data(${INT8_DATA_DIR} "pascalvoc_small.tar.gz")
+  download_int8_data(${PASCALVOC_DATA_DIR} ${PASCALVOC_SMALL_DATA_ARCHIVE})
 
   # build test binary to be used in subsequent tests
-  inference_analysis_api_test_build(${INT8_OBJ_DETECT_TEST_APP} ${INT8_OBJ_DETECT_TEST_APP_SRC})
+  set(INT8_OBJ_DETECT_TEST_APP "test_analyzer_int8_object_detection")
+  set(INT8_OBJ_DETECT_TEST_APP_SRC "analyzer_int8_object_detection_tester.cc")
+  inference_api_int8_test_build(${INT8_OBJ_DETECT_TEST_APP} ${INT8_OBJ_DETECT_TEST_APP_SRC})
 
   # mobilenet-ssd int8
   set(INT8_MOBILENET_SSD_MODEL_DIR "${INT8_DATA_DIR}/mobilenet-ssd")
-  download_int8_data(${INT8_MOBILENET_SSD_MODEL_DIR} "mobilenet_ssd_int8_model.tar.gz" )
-  inference_analysis_api_object_dection_int8_test_run(test_analyzer_int8_mobilenet_ssd ${INT8_OBJ_DETECT_TEST_APP} ${INT8_MOBILENET_SSD_MODEL_DIR} ${PASCALVOC_DATA_PATH})
+  set(INT8_MOBILENET_SSD_MODEL_ARCHIVE "mobilenet_ssd_int8_model.tar.gz")
+  download_int8_data(${INT8_MOBILENET_SSD_MODEL_DIR} ${INT8_MOBILENET_SSD_MODEL_ARCHIVE})
+  inference_api_int8_object_dection_test_run(test_analyzer_int8_mobilenet_ssd ${INT8_OBJ_DETECT_TEST_APP} ${INT8_MOBILENET_SSD_MODEL_DIR} ${PASCALVOC_DATA_PATH})
 
   ### optimized FP32 vs. QAT INT8 tests
   
-  set(QAT_DATA_DIR "${INFERENCE_DEMO_INSTALL_DIR}/int8v2")
+  set(QAT_DATA_DIR "${INFERENCE_DEMO_INSTALL_DIR}/qat")
   set(QAT_IMG_CLASS_TEST_APP "test_analyzer_qat_image_classification")
   set(QAT_IMG_CLASS_TEST_APP_SRC "analyzer_qat_image_classification_tester.cc")
 
   # build test binary to be used in subsequent tests
-  inference_analysis_api_test_build(${QAT_IMG_CLASS_TEST_APP} ${QAT_IMG_CLASS_TEST_APP_SRC})
+  inference_api_int8_test_build(${QAT_IMG_CLASS_TEST_APP} ${QAT_IMG_CLASS_TEST_APP_SRC})
 
   # MobileNet FP32 vs. QAT INT8
   set(QAT2_MobileNet_MODEL_DIR "${QAT_DATA_DIR}/MobileNet_qat_perf")
-  download_qat_data(${QAT2_MobileNet_MODEL_DIR} "MobileNet_qat_perf.tar.gz")
+  set(QAT2_MobileNet_MODEL_ARCHIVE "MobileNet_qat_perf.tar.gz")
+  download_qat_model(${QAT2_MobileNet_MODEL_DIR} ${QAT2_MobileNet_MODEL_ARCHIVE})
   set(QAT2_INT8_MobileNet_MODEL_DIR "${QAT_DATA_DIR}/MobileNet_qat_perf_int8")
-  download_qat_data(${QAT2_INT8_MobileNet_MODEL_DIR} "MobileNet_qat_perf_int8.tar.gz")
-  inference_analysis_api_qat_test_run(test_analyzer_qat_performance_benchmark ${QAT_IMG_CLASS_TEST_APP} ${QAT2_MobileNet_MODEL_DIR}/MobileNet_qat_perf/float ${QAT2_INT8_MobileNet_MODEL_DIR}/MobileNet_qat_perf_int8 ${IMAGENET_DATA_PATH})
+  set(QAT2_INT8_MobileNet_MODEL_ARCHIVE "MobileNet_qat_perf_int8.tar.gz")
+  download_qat_model(${QAT2_INT8_MobileNet_MODEL_DIR} ${QAT2_INT8_MobileNet_MODEL_ARCHIVE})
+  inference_api_qat_image_classification_test_run(test_analyzer_qat_performance_benchmark ${QAT_IMG_CLASS_TEST_APP} ${QAT2_MobileNet_MODEL_DIR}/MobileNet_qat_perf/float ${QAT2_INT8_MobileNet_MODEL_DIR}/MobileNet_qat_perf_int8 ${IMAGENET_DATA_PATH})
 
   ### Other tests
  
   # MKLDNN quantizer config
   set(MKLDNN_QUANTIZER_CONFIG_TEST_APP "test_mkldnn_quantizer_config")
   set(MKLDNN_QUANTIZER_CONFIG_TEST_APP_SRC "mkldnn_quantizer_config_tester.cc")
-  inference_analysis_api_test_build(${MKLDNN_QUANTIZER_CONFIG_TEST_APP} ${MKLDNN_QUANTIZER_CONFIG_TEST_APP_SRC})
+  inference_api_int8_test_build(${MKLDNN_QUANTIZER_CONFIG_TEST_APP} ${MKLDNN_QUANTIZER_CONFIG_TEST_APP_SRC})
   inference_analysis_test_run(test_mkldnn_quantizer_config COMMAND ${MKLDNN_QUANTIZER_CONFIG_TEST_APP})
 endif()
 
