@@ -61,7 +61,7 @@ def transform_and_save_model(original_path, save_path, save_type):
                                                             'model', 'params')
 
         transform_to_mkldnn_int8_pass = Qat2Int8MkldnnPass(
-            {'conv2d', 'pool2d'},
+            {'conv2d', 'pool2d', 'reshape2', 'transpose2', 'fc'},
             _scope=inference_scope,
             _place=place,
             _core=core)

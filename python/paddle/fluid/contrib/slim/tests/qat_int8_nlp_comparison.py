@@ -53,6 +53,8 @@ def parse_args():
         help='If used, the QAT model will be saved after all transformations')
     parser.add_argument('--infer_data', type=str, default='', help='Data file.')
     parser.add_argument(
+        '--labels', type=str, default='', help='File with labels.')
+    parser.add_argument(
         '--batch_num',
         type=int,
         default=1,
@@ -76,47 +78,60 @@ class QatInt8NLPComparisonTest(unittest.TestCase):
     #  def __init__(self, debug):
     #  self._debug = debug
 
-    def _reader_creator(self, data_file=None):
+    def _reader_creator(self, data_file=None, labels_file=None):
+        assert data_file, "The dataset file is missing."
+        assert labels_file, "The labels file is missing."
+
         def reader():
-            with open(data_file, 'r') as fp:
-                for line_id, line in enumerate(fp):
-                    data_fields = line.split(';')
-                    if (len(data_fields) < 2):
-                        print("Length of data fields should be 2, not {}.".
-                              format(len(data_fields)))
-                    buffers = []
-                    shape = []
-                    for i in range(2):
-                        data = data_fields[i].split(':')
-                        if len(data) < 2:
-                            print("Size of data should be bigger than 2")
-                        # Shape is stored under index 0, while data under 1
-                        shape = data[0].split()
-                        shape_np = np.array(shape).astype("int")
-                        buffer_i = data[1].split()
-                        buffer_i = np.array(buffer_i).astype("int64")
-                        buffer_i.shape = tuple(shape_np)
-                        buffers.append(buffer_i)
-                    yield buffers[0], buffers[1]
+            with open(data_file, 'r') as df:
+                with open(labels_file, 'r') as lf:
+                    data_lines = df.readlines()
+                    labels_lines = lf.readlines()
+                    assert len(data_lines) == len(
+                        labels_lines
+                    ), "The number of labels does not match the length of the dataset."
+
+                    for i in range(len(data_lines)):
+                        print("line: {}".format(data_lines[i]))
+                        data_fields = data_lines[i].split(';')
+                        print("fields: {}".format(data_fields))
+                        assert len(
+                            data_fields
+                        ) >= 2, "The number of data fields in the dataset is less than 2"
+                        buffers = []
+                        shape = []
+                        for i in range(2):
+                            data = data_fields[i].split(':')
+                            print("data: {}".format(data))
+                            assert len(
+                                data
+                            ) >= 2, "Size of data in the dataset is less than 2"
+                            # Shape is stored under index 0, while data under 1
+                            shape = data[0].split()
+                            print("shape: {}".format(shape))
+                            shape_np = np.array(shape).astype("int")
+                            buffer_i = data[1].split()
+                            print("buffer_i: {}".format(buffer_i))
+                            buffer_np = np.array(buffer_i).astype("int64")
+                            buffer_np.shape = tuple(shape_np)
+                            print("buffer_np: {}".format(buffer_np))
+                            buffers.append(buffer_np)
+                        label = labels_lines[i].strip()
+                        print("all: {}, {}, {}".format(buffers[0], buffers[1],
+                                                       int(label)))
+                        yield buffers[0], buffers[1], int(label)
 
         return reader
 
     def _get_batch_accuracy(self, batch_output=None, labels=None):
-        total = 0
+        total = len(batch_output)
+        assert total > 0, "The batch output is empty."
         correct = 0
-        correct_5 = 0
-        for n, result in enumerate(batch_output):
-            index = result.argsort()
-            top_1_index = index[-1]
-            top_5_index = index[-5:]
-            total += 1
-            if top_1_index == labels[n]:
+        for n, output in enumerate(batch_output):
+            max_idx = output.index(max(output))
+            if max_idx == labels[n]:
                 correct += 1
-            if labels[n] in top_5_index:
-                correct_5 += 1
-        acc1 = float(correct) / float(total)
-        acc5 = float(correct_5) / float(total)
-        return acc1, acc5
+        return float(correct) / float(total)
 
     def _prepare_for_fp32_mkldnn(self, graph):
         ops = graph.all_op_nodes()
@@ -185,15 +200,10 @@ class QatInt8NLPComparisonTest(unittest.TestCase):
 
             inference_program = graph.to_program()
 
-            dshape = [3, 224, 224]
-            outputs = []
-            infer_accs1 = []
-            infer_accs5 = []
+            infer_accs = []
             fpses = []
             batch_times = []
             total_samples = 0
-            top1 = 0.0
-            top5 = 0.0
             iters = 0
             infer_start_time = time.time()
             for data in test_reader():
@@ -202,23 +212,20 @@ class QatInt8NLPComparisonTest(unittest.TestCase):
                 if iters == skip_batch_num:
                     total_samples = 0
                     infer_start_time = time.time()
-                if six.PY2:
-                    images = map(lambda x: x[0].reshape(dshape), data)
-                if six.PY3:
-                    images = list(map(lambda x: x[0].reshape(dshape), data))
-                images = np.array(images).astype('float32')
-                labels = np.array([x[1] for x in data]).astype('int64')
+                input1 = np.array([x[0] for x in data]).astype('int64')
+                input2 = np.array([x[1] for x in data]).astype('int64')
+                labels = np.array([x[2] for x in data]).astype('int64')
 
                 start = time.time()
                 out = exe.run(inference_program,
-                              feed={feed_target_names[0]: images},
+                              feed={
+                                  feed_target_names[0]: input1,
+                                  feed_target_names[1]: input2
+                              },
                               fetch_list=fetch_targets)
                 batch_time = (time.time() - start) * 1000  # in miliseconds
-                outputs.append(out[0])
-                batch_acc1, batch_acc5 = self._get_batch_accuracy(out[0],
-                                                                  labels)
-                infer_accs1.append(batch_acc1)
-                infer_accs5.append(batch_acc5)
+                batch_acc = self._get_batch_accuracy(out, labels)
+                infer_accs.append(batch_acc)
                 samples = len(data)
                 total_samples += samples
                 batch_times.append(batch_time)
@@ -226,20 +233,19 @@ class QatInt8NLPComparisonTest(unittest.TestCase):
                 fpses.append(fps)
                 iters += 1
                 appx = ' (warm-up)' if iters <= skip_batch_num else ''
-                _logger.info('batch {0}{5}, acc1: {1:.4f}, acc5: {2:.4f}, '
-                             'latency: {3:.4f} ms, fps: {4:.2f}'.format(
-                                 iters, batch_acc1, batch_acc5, batch_time /
-                                 batch_size, fps, appx))
+                _logger.info(
+                    'batch {0}{5}, acc: {1:.4f}, latency: {3:.4f} ms, fps: {4:.2f}'
+                    .format(iters, batch_acc, batch_time / batch_size, fps,
+                            appx))
 
             # Postprocess benchmark data
+            infer_total_time = time.time() - infer_start_time
             batch_latencies = batch_times[skip_batch_num:]
             batch_latency_avg = np.average(batch_latencies)
             latency_avg = batch_latency_avg / batch_size
             fpses = fpses[skip_batch_num:]
             fps_avg = np.average(fpses)
-            infer_total_time = time.time() - infer_start_time
-            acc1_avg = np.mean(infer_accs1)
-            acc5_avg = np.mean(infer_accs5)
+            acc_avg = np.mean(infer_accs)
             _logger.info('Total inference run time: {:.2f} s'.format(
                 infer_total_time))
 
@@ -249,7 +255,7 @@ class QatInt8NLPComparisonTest(unittest.TestCase):
                         'transformed_qat_int8_model', feed_target_names,
                         fetch_targets, exe, inference_program)
 
-            return outputs, acc1_avg, acc5_avg, fps_avg, latency_avg
+            return acc_avg, fps_avg, latency_avg
 
     def _summarize_performance(self, fp32_fps, fp32_lat, int8_fps, int8_lat):
         _logger.info('--- Performance summary ---')
@@ -258,21 +264,16 @@ class QatInt8NLPComparisonTest(unittest.TestCase):
         _logger.info('INT8: avg fps: {0:.2f}, avg latency: {1:.4f} ms'.format(
             int8_fps, int8_lat))
 
-    def _compare_accuracy(self, fp32_acc1, fp32_acc5, int8_acc1, int8_acc5,
-                          threshold):
+    def _compare_accuracy(self, fp32_acc, int8_acc, threshold):
         _logger.info('--- Accuracy summary ---')
         _logger.info(
-            'Accepted top1 accuracy drop threshold: {0}. (condition: (FP32_top1_acc - IN8_top1_acc) <= threshold)'
+            'Accepted accuracy drop threshold: {0}. (condition: (FP32_acc - IN8_acc) <= threshold)'
             .format(threshold))
-        _logger.info(
-            'FP32: avg top1 accuracy: {0:.4f}, avg top5 accuracy: {1:.4f}'.
-            format(fp32_acc1, fp32_acc5))
-        _logger.info(
-            'INT8: avg top1 accuracy: {0:.4f}, avg top5 accuracy: {1:.4f}'.
-            format(int8_acc1, int8_acc5))
-        assert fp32_acc1 > 0.0
-        assert int8_acc1 > 0.0
-        assert fp32_acc1 - int8_acc1 <= threshold
+        _logger.info('FP32: avg accuracy: {0:.4f}'.format(fp32_acc))
+        _logger.info('INT8: avg accuracy: {0:.4f}'.format(int8_acc))
+        assert fp32_acc > 0.0
+        assert int8_acc > 0.0
+        assert fp32_acc - int8_acc <= threshold
 
     def test_graph_transformation(self):
         if not fluid.core.is_compiled_with_mkldnn():
@@ -280,6 +281,7 @@ class QatInt8NLPComparisonTest(unittest.TestCase):
 
         qat_model_path = test_case_args.qat_model
         data_path = test_case_args.infer_data
+        labels_path = test_case_args.labels
         batch_size = test_case_args.batch_size
         batch_num = test_case_args.batch_num
         skip_batch_num = test_case_args.skip_batch_num
@@ -289,24 +291,25 @@ class QatInt8NLPComparisonTest(unittest.TestCase):
         _logger.info('QAT FP32 & INT8 prediction run.')
         _logger.info('QAT model: {0}'.format(qat_model_path))
         _logger.info('Dataset: {0}'.format(data_path))
+        _logger.info('Labels: {0}'.format(labels_path))
         _logger.info('Batch size: {0}'.format(batch_size))
         _logger.info('Batch number: {0}'.format(batch_num))
         _logger.info('Accuracy drop threshold: {0}.'.format(acc_diff_threshold))
 
-        _logger.info('--- QAT FP32 prediction start ---')
-        val_reader = paddle.batch(
-            self._reader_creator(data_path), batch_size=batch_size)
-        fp32_output, fp32_acc1, fp32_acc5, fp32_fps, fp32_lat = self._predict(
-            val_reader,
-            qat_model_path,
-            batch_size,
-            batch_num,
-            skip_batch_num,
-            transform_to_int8=False)
+        #  _logger.info('--- QAT FP32 prediction start ---')
+        #  val_reader = paddle.batch(
+        #  self._reader_creator(data_path, labels_path), batch_size=batch_size)
+        #  fp32_acc, fp32_fps, fp32_lat = self._predict(
+        #  val_reader,
+        #  qat_model_path,
+        #  batch_size,
+        #  batch_num,
+        #  skip_batch_num,
+        #  transform_to_int8=False)
         _logger.info('--- QAT INT8 prediction start ---')
         val_reader = paddle.batch(
-            self._reader_creator(data_path), batch_size=batch_size)
-        int8_output, int8_acc1, int8_acc5, int8_fps, int8_lat = self._predict(
+            self._reader_creator(data_path, labels_path), batch_size=batch_size)
+        int8_acc, int8_fps, int8_lat = self._predict(
             val_reader,
             qat_model_path,
             batch_size,
@@ -315,8 +318,7 @@ class QatInt8NLPComparisonTest(unittest.TestCase):
             transform_to_int8=True)
 
         self._summarize_performance(fp32_fps, fp32_lat, int8_fps, int8_lat)
-        self._compare_accuracy(fp32_acc1, fp32_acc5, int8_acc1, int8_acc5,
-                               acc_diff_threshold)
+        self._compare_accuracy(fp32_acc, int8_acc, acc_diff_threshold)
 
 
 if __name__ == '__main__':
