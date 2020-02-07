@@ -16,6 +16,11 @@ function(inference_analysis_python_api_int8_test target model_dir data_path file
     _inference_analysis_python_api_int8_test(${target} ${model_dir} ${data_path} ${filename} False)
 endfunction()
 
+function(inference_analysis_python_api_int8_test_custom_warmup_batch_size target model_dir data_dir filename warmup_batch_size)
+    set(WARMUP_BATCH_SIZE ${warmup_batch_size})
+    inference_analysis_python_api_int8_test(${target} ${model_dir} ${data_dir} ${filename})
+endfunction()
+
 function(inference_analysis_python_api_int8_test_mkldnn target model_dir data_path filename)
     _inference_analysis_python_api_int8_test(${target} ${model_dir} ${data_path} ${filename} True)
 endfunction()
@@ -30,11 +35,6 @@ function(download_qat_model install_dir data_file)
     if (NOT EXISTS ${install_dir}/${data_file})
 	    inference_download_and_uncompress(${install_dir} ${INFERENCE_URL}/int8/QAT_models ${data_file})
     endif()
-endfunction()
-
-function(inference_analysis_python_api_int8_test_custom_warmup_batch_size target model_dir data_dir filename warmup_batch_size)
-    set(WARMUP_BATCH_SIZE ${warmup_batch_size})
-    inference_analysis_python_api_int8_test(${target} ${model_dir} ${data_dir} ${filename})
 endfunction()
 
 function(inference_qat_int8_image_classification_test target model_dir dataset_path)
@@ -92,6 +92,7 @@ if(WIN32)
     list(REMOVE_ITEM TEST_OPS test_light_nas)
     list(REMOVE_ITEM TEST_OPS test_post_training_quantization_mobilenetv1)
     list(REMOVE_ITEM TEST_OPS test_post_training_quantization_resnet50)
+    list(REMOVE_ITEM TEST_OPS test_weight_quantization_mobilenetv1)
 endif()
 
 if(LINUX AND WITH_MKLDNN)
@@ -109,7 +110,7 @@ if(LINUX AND WITH_MKLDNN)
 
 	# googlenet int8
 	set(INT8_GOOGLENET_MODEL_DIR "${INT8_INSTALL_DIR}/googlenet")
-	inference_analysis_python_api_int8_test(test_slim_int8_googlenet ${INT8_GOOGLENET_MODEL_DIR} ${IMAGENET_DATA_PATH} ${INT8_IC_TEST_FILE_PATH})
+	inference_analysis_python_api_int8_test_custom_warmup_batch_size(test_slim_int8_googlenet ${INT8_GOOGLENET_MODEL_DIR} ${IMAGENET_DATA_PATH} ${INT8_IC_TEST_FILE_PATH} 10)
 
 	# mobilenet int8
 	set(INT8_MOBILENET_MODEL_DIR "${INT8_INSTALL_DIR}/mobilenetv1")
