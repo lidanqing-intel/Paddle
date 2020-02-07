@@ -140,19 +140,12 @@ class Qat2Int8MkldnnPass(object):
 
         def _update_scales(graph):
             waiting_for_scale = set()
-            print("--- immutable ops: {}".format(self._scale_immutable_ops))
             for op in graph.all_op_nodes():
                 if op.name() in self._scale_immutable_ops:
                     input_name = op.input("X")[0]
                     output_name = op.output("Out")[0]
                     tensor_names = [input_name, output_name]
 
-                    #  # Both scales present
-                    #  if all(name in self._var_quant_scales
-                    #  for name in tensor_names):
-                    #  continue
-
-                    # Both scales absent
                     # Scale is not quantized, so if it doesn't have any scales
                     # to propagate, its tensors won't be added to the waiting list.
                     if all(name not in self._var_quant_scales for name in tensor_names) \
@@ -177,7 +170,6 @@ class Qat2Int8MkldnnPass(object):
 
         while len(waiting_for_scale) != 0:
             waiting_for_scale = _update_scales(graph)
-            print(waiting_for_scale)
 
         return graph
 

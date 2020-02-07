@@ -11,13 +11,13 @@ function(download_data install_dir data_file)
 endfunction()
 
 function(download_int8_data install_dir data_file)
-    if (NOT EXISTS ${install_dir})
+    if (NOT EXISTS ${install_dir}/${data_file})
         inference_download_and_uncompress(${install_dir} ${INFERENCE_URL}/int8 ${data_file})
     endif()
 endfunction()
 
 function(download_qat_model install_dir data_file)
-    if (NOT EXISTS ${install_dir})
+    if (NOT EXISTS ${install_dir}/${data_file})
 	    inference_download_and_uncompress(${install_dir} ${INFERENCE_URL}/int8/QAT_models ${data_file})
     endif()
 endfunction()
@@ -53,12 +53,12 @@ function(inference_api_int8_image_classification_test_run TARGET_NAME test_binar
 	     --iterations=2)
 endfunction()
 
-function(inference_analysis_api_int8_test_run_custom_warmup_batch_size TARGET_NAME test_binary model_dir data_path warmup_batch_size)
+function(inference_api_int8_image_classification_test_run_custom_warmup_batch_size TARGET_NAME test_binary model_dir data_path warmup_batch_size)
     set(WARMUP_BATCH_SIZE ${warmup_batch_size})
-    inference_analysis_api_int8_test_run(${TARGET_NAME} ${test_binary} ${model_dir} ${data_path})
+    inference_api_int8_image_classification_test_run(${TARGET_NAME} ${test_binary} ${model_dir} ${data_path})
 endfunction()
 
-function(inference_api_int8_object_dection_test_run TARGET_NAME test_binary model_dir data_path)
+function(inference_api_int8_object_detection_test_run TARGET_NAME test_binary model_dir data_path)
 	inference_analysis_test_run(${TARGET_NAME}
 	COMMAND ${test_binary}
         ARGS --infer_model=${model_dir}/model
@@ -283,7 +283,7 @@ if(WITH_MKLDNN)
   set(INT8_GOOGLENET_MODEL_DIR "${INT8_DATA_DIR}/googlenet")
   set(INT8_GOOGLENET_MODEL_ARCHIVE "GoogleNet_int8_model.tar.gz")
   download_int8_data(${INT8_GOOGLENET_MODEL_DIR} ${INT8_GOOGLENET_MODEL_ARCHIVE})
-  inference_analysis_api_int8_test_run_custom_warmup_batch_size(test_analyzer_int8_googlenet ${INT8_IMG_CLASS_TEST_APP} ${INT8_GOOGLENET_MODEL_DIR} ${IMAGENET_DATA_PATH} 10)
+  inference_api_int8_image_classification_test_run_custom_warmup_batch_size(test_analyzer_int8_googlenet ${INT8_IMG_CLASS_TEST_APP} ${INT8_GOOGLENET_MODEL_DIR} ${IMAGENET_DATA_PATH} 10)
 
   ## Object detection models
 
@@ -305,7 +305,7 @@ if(WITH_MKLDNN)
   set(INT8_MOBILENET_SSD_MODEL_DIR "${INT8_DATA_DIR}/mobilenet-ssd")
   set(INT8_MOBILENET_SSD_MODEL_ARCHIVE "mobilenet_ssd_int8_model.tar.gz")
   download_int8_data(${INT8_MOBILENET_SSD_MODEL_DIR} ${INT8_MOBILENET_SSD_MODEL_ARCHIVE})
-  inference_api_int8_object_dection_test_run(test_analyzer_int8_mobilenet_ssd ${INT8_OBJ_DETECT_TEST_APP} ${INT8_MOBILENET_SSD_MODEL_DIR} ${PASCALVOC_DATA_PATH})
+  inference_api_int8_object_detection_test_run(test_analyzer_int8_mobilenet_ssd ${INT8_OBJ_DETECT_TEST_APP} ${INT8_MOBILENET_SSD_MODEL_DIR} ${PASCALVOC_DATA_PATH})
 
   ### optimized FP32 vs. QAT INT8 tests
   
@@ -317,9 +317,8 @@ if(WITH_MKLDNN)
   inference_api_int8_test_build(${QAT_IMG_CLASS_TEST_APP} ${QAT_IMG_CLASS_TEST_APP_SRC})
 
   # MobileNet FP32 vs. QAT INT8
+  # The FP32 model should already be downloaded for slim QAT unit tests
   set(QAT2_MobileNet_MODEL_DIR "${QAT_DATA_DIR}/MobileNet_qat_perf")
-  set(QAT2_MobileNet_MODEL_ARCHIVE "MobileNet_qat_perf.tar.gz")
-  download_qat_model(${QAT2_MobileNet_MODEL_DIR} ${QAT2_MobileNet_MODEL_ARCHIVE})
   set(QAT2_INT8_MobileNet_MODEL_DIR "${QAT_DATA_DIR}/MobileNet_qat_perf_int8")
   set(QAT2_INT8_MobileNet_MODEL_ARCHIVE "MobileNet_qat_perf_int8.tar.gz")
   download_qat_model(${QAT2_INT8_MobileNet_MODEL_DIR} ${QAT2_INT8_MobileNet_MODEL_ARCHIVE})

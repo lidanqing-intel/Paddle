@@ -53,10 +53,6 @@ def parse_args():
         action='store_true',
         help='If used, the QAT model is treated as a second generation model for performance optimization.'
     )
-    parser.add_argument(
-        '--save_model',
-        action='store_true',
-        help='If used, the QAT model will be saved after all transformations')
     parser.add_argument('--infer_data', type=str, default='', help='Data file.')
     parser.add_argument(
         '--batch_num',
@@ -68,6 +64,11 @@ def parse_args():
         type=float,
         default=0.01,
         help='Accepted accuracy difference threshold.')
+    parser.add_argument(
+        '--quantized_ops',
+        type=str,
+        default='',
+        help='A comma separated list of quantized operators.')
 
     test_args, args = parser.parse_known_args(namespace=unittest)
 
@@ -186,7 +187,7 @@ class QatInt8ImageClassificationComparisonTest(unittest.TestCase):
             if (transform_to_int8):
                 if (test_case_args.qat2):
                     transform_to_mkldnn_int8_pass = Qat2Int8MkldnnPass(
-                        {'conv2d', 'pool2d'},
+                        self._quantized_ops,
                         _scope=inference_scope,
                         _place=place,
                         _core=core,
@@ -260,12 +261,6 @@ class QatInt8ImageClassificationComparisonTest(unittest.TestCase):
             _logger.info('Total inference run time: {:.2f} s'.format(
                 infer_total_time))
 
-            if test_case_args.save_model:
-                with fluid.scope_guard(inference_scope):
-                    fluid.io.save_inference_model(
-                        'transformed_qat_int8_model', feed_target_names,
-                        fetch_targets, exe, inference_program)
-
             return outputs, acc1_avg, acc5_avg, fps_avg, latency_avg
 
     def _summarize_performance(self, fp32_fps, fp32_lat, int8_fps, int8_lat):
@@ -302,6 +297,7 @@ class QatInt8ImageClassificationComparisonTest(unittest.TestCase):
         skip_batch_num = test_case_args.skip_batch_num
         acc_diff_threshold = test_case_args.acc_diff_threshold
         self._debug = test_case_args.debug
+        self._quantized_ops = set(test_case_args.quantized_ops.split(','))
 
         _logger.info('QAT FP32 & INT8 prediction run.')
         _logger.info('QAT model: {0}'.format(qat_model_path))
@@ -309,6 +305,7 @@ class QatInt8ImageClassificationComparisonTest(unittest.TestCase):
         _logger.info('Batch size: {0}'.format(batch_size))
         _logger.info('Batch number: {0}'.format(batch_num))
         _logger.info('Accuracy drop threshold: {0}.'.format(acc_diff_threshold))
+        _logger.info('Quantized ops: {0}.'.format(self._quantized_ops))
 
         _logger.info('--- QAT FP32 prediction start ---')
         val_reader = paddle.batch(

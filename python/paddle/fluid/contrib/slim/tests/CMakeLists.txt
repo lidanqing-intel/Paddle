@@ -21,13 +21,13 @@ function(inference_analysis_python_api_int8_test_mkldnn target model_dir data_pa
 endfunction()
 
 function(download_qat_data install_dir data_file)
-    if (NOT EXISTS ${install_dir})
+    if (NOT EXISTS ${install_dir}/${data_file})
 	    inference_download_and_uncompress(${install_dir} ${INFERENCE_URL}/int8 ${data_file})
     endif()
 endfunction()
 
 function(download_qat_model install_dir data_file)
-    if (NOT EXISTS ${install_dir})
+    if (NOT EXISTS ${install_dir}/${data_file})
 	    inference_download_and_uncompress(${install_dir} ${INFERENCE_URL}/int8/QAT_models ${data_file})
     endif()
 endfunction()
@@ -37,11 +37,11 @@ function(inference_analysis_python_api_int8_test_custom_warmup_batch_size target
     inference_analysis_python_api_int8_test(${target} ${model_dir} ${data_dir} ${filename})
 endfunction()
 
-function(inference_qat_int8_image_classification_test target model_dir dataset_path test_script use_mkldnn)
-    py_test(${target} SRCS ${test_script}
+function(inference_qat_int8_image_classification_test target model_dir dataset_path)
+    py_test(${target} SRCS "${CMAKE_CURRENT_SOURCE_DIR}/qat_int8_image_classification_comparison.py"
             ENVS FLAGS_OMP_NUM_THREADS=${CPU_NUM_THREADS_ON_CI}
                  OMP_NUM_THREADS=${CPU_NUM_THREADS_ON_CI}
-                 FLAGS_use_mkldnn=${use_mkldnn}
+                 FLAGS_use_mkldnn=true
             ARGS --qat_model ${model_dir}/model
                  --infer_data ${dataset_path}
                  --batch_size 25
@@ -51,38 +51,41 @@ endfunction()
 
 
 # set batch_size 10 for UT only (avoid OOM). For whole dataset, use batch_size 25 
-function(inference_qat2_int8_image_classification_test target model_dir data_path test_script use_mkldnn)
-    py_test(${target} SRCS ${test_script}
+function(inference_qat2_int8_image_classification_test target model_dir data_path quantized_ops)
+    py_test(${target} SRCS "${CMAKE_CURRENT_SOURCE_DIR}/qat_int8_image_classification_comparison.py"
             ENVS FLAGS_OMP_NUM_THREADS=${CPU_NUM_THREADS_ON_CI}
                  OMP_NUM_THREADS=${CPU_NUM_THREADS_ON_CI}
-                 FLAGS_use_mkldnn=${use_mkldnn}
+                 FLAGS_use_mkldnn=true
             ARGS --qat_model ${model_dir}/float
                  --infer_data ${data_path}
                  --batch_size 10
                  --batch_num 2
                  --acc_diff_threshold 0.1
+		 --quantized_ops ${quantized_ops}
 		 --qat2)
 endfunction()
 
 # set batch_size 10 for UT only (avoid OOM). For whole dataset, use batch_size 20 
-function(inference_qat2_int8_nlp_test target model_dir data_path labels_path test_script use_mkldnn)
-    py_test(${target} SRCS ${test_script}
+function(inference_qat2_int8_nlp_test target model_dir data_path labels_path quantized_ops)
+    py_test(${target} SRCS "${CMAKE_CURRENT_SOURCE_DIR}/qat_int8_nlp_comparison.py"
             ENVS FLAGS_OMP_NUM_THREADS=${CPU_NUM_THREADS_ON_CI}
                  OMP_NUM_THREADS=${CPU_NUM_THREADS_ON_CI}
-                 FLAGS_use_mkldnn=${use_mkldnn}
+                 FLAGS_use_mkldnn=true
             ARGS --qat_model ${model_dir}/float
                  --infer_data ${data_path}
 		 --labels ${labels_path}
-                 --batch_size 1 
+                 --batch_size 10
                  --batch_num 2
+		 --quantized_ops ${quantized_ops}
                  --acc_diff_threshold 0.1)
 endfunction()
 
-function(save_qat_model_test target qat_model_dir fp32_model_save_path int8_model_save_path test_script)
-    py_test(${target} SRCS ${test_script}
+function(save_qat_model_test target qat_model_dir fp32_model_save_path int8_model_save_path quantized_ops)
+    py_test(${target} SRCS ${CMAKE_CURRENT_SOURCE_DIR}/save_qat_model.py
             ARGS --qat_model_path ${qat_model_dir}
 	            --fp32_model_save_path ${fp32_model_save_path}
-	            --int8_model_save_path ${int8_model_save_path})
+	            --int8_model_save_path ${int8_model_save_path}
+		    --quantized_ops ${quantized_ops})
 endfunction()
 
 if(WIN32)
@@ -94,11 +97,8 @@ endif()
 if(LINUX AND WITH_MKLDNN)
 
 	#### Image classification dataset: ImageNet (small)
-	# May be already downloaded for INT8v2 unit tests
-	set(IMAGENET_DATA_ARCHIVE "imagenet_val_100_tail.tar.gz")
-	set(IMAGENET_DATA_DIR "${INFERENCE_DEMO_INSTALL_DIR}/imagenet")
-	set(IMAGENET_DATA_PATH "${IMAGENET_DATA_DIR}/data.bin")
-	download_qat_data(${IMAGENET_DATA_DIR} ${IMAGENET_DATA_ARCHIVE})
+	# The dataset should already be downloaded for INT8v2 unit tests
+	set(IMAGENET_DATA_PATH "${INFERENCE_DEMO_INSTALL_DIR}/imagenet/data.bin")
 
 	#### INT8 image classification python api test
 	# Models should be already downloaded for INT8v2 unit tests
@@ -146,66 +146,67 @@ if(LINUX AND WITH_MKLDNN)
 
 	### QATv1 for image classification
 
-	set(QAT_IC_TEST_FILE "qat_int8_image_classification_comparison.py")
-	set(QAT_IC_TEST_FILE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/${QAT_IC_TEST_FILE}")
-
 	# QAT ResNet50
 	set(QAT_RESNET50_MODEL_DIR "${QAT_INSTALL_DIR}/ResNet50_QAT")
 	set(QAT_RESNET50_MODEL_ARCHIVE "ResNet50_qat_model.tar.gz")
 	download_qat_model(${QAT_RESNET50_MODEL_DIR} ${QAT_RESNET50_MODEL_ARCHIVE})
-	inference_qat_int8_image_classification_test(test_qat_int8_resnet50_mkldnn ${QAT_RESNET50_MODEL_DIR} ${IMAGENET_DATA_PATH} ${QAT_IC_TEST_FILE_PATH} true)
+	inference_qat_int8_image_classification_test(test_qat_int8_resnet50_mkldnn ${QAT_RESNET50_MODEL_DIR} ${IMAGENET_DATA_PATH})
 
 	# QAT ResNet101
 	set(QAT_RESNET101_MODEL_DIR "${QAT_INSTALL_DIR}/ResNet101_QAT")
 	set(QAT_RESNET101_MODEL_ARCHIVE "ResNet101_qat_model.tar.gz")
 	download_qat_model(${QAT_RESNET101_MODEL_DIR} ${QAT_RESNET101_MODEL_ARCHIVE})
-	# inference_qat_int8_image_classification_test(test_qat_int8_resnet101_mkldnn ${QAT_RESNET101_MODEL_DIR} ${IMAGENET_DATA_PATH} ${QAT_IC_TEST_FILE_PATH} true)
+	# inference_qat_int8_image_classification_test(test_qat_int8_resnet101_mkldnn ${QAT_RESNET101_MODEL_DIR} ${IMAGENET_DATA_PATH})
 
 	# QAT GoogleNet
 	set(QAT_GOOGLENET_MODEL_DIR "${QAT_INSTALL_DIR}/GoogleNet_QAT")
 	set(QAT_GOOGLENET_MODEL_ARCHIVE "GoogleNet_qat_model.tar.gz")
 	download_qat_model(${QAT_GOOGLENET_MODEL_DIR} ${QAT_GOOGLENET_MODEL_ARCHIVE})
-	inference_qat_int8_image_classification_test(test_qat_int8_googlenet_mkldnn ${QAT_GOOGLENET_MODEL_DIR} ${IMAGENET_DATA_PATH} ${QAT_IC_TEST_FILE_PATH} true)
+	inference_qat_int8_image_classification_test(test_qat_int8_googlenet_mkldnn ${QAT_GOOGLENET_MODEL_DIR} ${IMAGENET_DATA_PATH})
 
 	# QAT MobileNetV1
 	set(QAT_MOBILENETV1_MODEL_DIR "${QAT_INSTALL_DIR}/MobileNetV1_QAT")
 	set(QAT_MOBILENETV1_MODEL_ARCHIVE "MobileNetV1_qat_model.tar.gz")
 	download_qat_model(${QAT_MOBILENETV1_MODEL_DIR} ${QAT_MOBILENETV1_MODEL_ARCHIVE})
-	inference_qat_int8_image_classification_test(test_qat_int8_mobilenetv1_mkldnn ${QAT_MOBILENETV1_MODEL_DIR} ${IMAGENET_DATA_PATH} ${QAT_IC_TEST_FILE_PATH} true)
+	inference_qat_int8_image_classification_test(test_qat_int8_mobilenetv1_mkldnn ${QAT_MOBILENETV1_MODEL_DIR} ${IMAGENET_DATA_PATH})
 
 	# QAT MobileNetV2
 	set(QAT_MOBILENETV2_MODEL_DIR "${QAT_INSTALL_DIR}/MobileNetV2_QAT")
 	set(QAT_MOBILENETV2_MODEL_ARCHIVE "MobileNetV2_qat_model.tar.gz")
 	download_qat_model(${QAT_MOBILENETV2_MODEL_DIR} ${QAT_MOBILENETV2_MODEL_ARCHIVE})
-	inference_qat_int8_image_classification_test(test_qat_int8_mobilenetv2_mkldnn ${QAT_MOBILENETV2_MODEL_DIR} ${IMAGENET_DATA_PATH} ${QAT_IC_TEST_FILE_PATH} true)
+	inference_qat_int8_image_classification_test(test_qat_int8_mobilenetv2_mkldnn ${QAT_MOBILENETV2_MODEL_DIR} ${IMAGENET_DATA_PATH})
 
 	# QAT VGG16
 	set(QAT_VGG16_MODEL_DIR "${QAT_INSTALL_DIR}/VGG16_QAT")
 	set(QAT_VGG16_MODEL_ARCHIVE "VGG16_qat_model.tar.gz")
 	download_qat_model(${QAT_VGG16_MODEL_DIR} ${QAT_VGG16_MODEL_ARCHIVE})
-	# inference_qat_int8_image_classification_test(test_qat_int8_vgg16_mkldnn ${QAT_VGG16_MODEL_DIR} ${IMAGENET_DATA_PATH} ${QAT_IC_TEST_FILE_PATH} true)
+	# inference_qat_int8_image_classification_test(test_qat_int8_vgg16_mkldnn ${QAT_VGG16_MODEL_DIR} ${IMAGENET_DATA_PATH})
 
 	# QAT VGG19
 	set(QAT_VGG19_MODEL_DIR "${QAT_INSTALL_DIR}/VGG19_QAT")
 	set(QAT_VGG19_MODEL_ARCHIVE "VGG19_qat_model.tar.gz")
 	download_qat_model(${QAT_VGG19_MODEL_DIR} ${QAT_VGG19_MODEL_ARCHIVE})
-	# inference_qat_int8_image_classification_test(test_qat_int8_vgg19_mkldnn ${QAT_VGG19_MODEL_DIR} ${IMAGENET_DATA_PATH} ${QAT_IC_TEST_FILE_PATH} true)
+	# inference_qat_int8_image_classification_test(test_qat_int8_vgg19_mkldnn ${QAT_VGG19_MODEL_DIR} ${IMAGENET_DATA_PATH})
 
 	### QATv2 for image classification
+
+	set(QAT2_IC_QUANTIZED_OPS "conv2d,pool2d")
 
 	# QAT2 ResNet50
         set(QAT2_RESNET50_MODEL_DIR "${QAT_INSTALL_DIR}/ResNet50_qat_perf")
 	set(QAT2_RESNET50_MODEL_ARCHIVE "ResNet50_qat_perf.tar.gz")
 	download_qat_model(${QAT2_RESNET50_MODEL_DIR} ${QAT2_RESNET50_MODEL_ARCHIVE})
-	inference_qat2_int8_image_classification_test(test_qat2_int8_resnet50_mkldnn ${QAT2_RESNET50_MODEL_DIR}/ResNet50_qat_perf ${IMAGENET_DATA_PATH} ${QAT_IC_TEST_FILE_PATH} true)
+	inference_qat2_int8_image_classification_test(test_qat2_int8_resnet50_mkldnn ${QAT2_RESNET50_MODEL_DIR}/ResNet50_qat_perf ${IMAGENET_DATA_PATH} ${QAT2_IC_QUANTIZED_OPS})
 
 	# QAT2 MobileNetV1
         set(QAT2_MOBILENETV1_MODEL_DIR "${QAT_INSTALL_DIR}/MobileNet_qat_perf")
 	set(QAT2_MOBILENETV1_MODEL_ARCHIVE "MobileNet_qat_perf.tar.gz")
 	download_qat_model(${QAT2_MOBILENETV1_MODEL_DIR} ${QAT2_MOBILENETV1_MODEL_ARCHIVE})
-	inference_qat2_int8_image_classification_test(test_qat2_int8_mobilenetv1_mkldnn ${QAT2_MOBILENETV1_MODEL_DIR}/MobileNet_qat_perf ${IMAGENET_DATA_PATH} ${QAT_IC_TEST_FILE_PATH} true)
+	inference_qat2_int8_image_classification_test(test_qat2_int8_mobilenetv1_mkldnn ${QAT2_MOBILENETV1_MODEL_DIR}/MobileNet_qat_perf ${IMAGENET_DATA_PATH} ${QAT2_IC_QUANTIZED_OPS})
 
 	### QATv2 for NLP
+
+	set(QAT2_NLP_QUANTIZED_OPS "fc,reshape2,transpose2")
 
 	set(NLP_DATA_ARCHIVE "Ernie_dataset.tar.gz")
 	set(NLP_DATA_DIR "${INFERENCE_DEMO_INSTALL_DIR}/Ernie_dataset")
@@ -213,24 +214,21 @@ if(LINUX AND WITH_MKLDNN)
 	set(NLP_LABLES_PATH "${NLP_DATA_DIR}/Ernie_dataset/label.xnli.dev")
 	download_qat_data(${NLP_DATA_DIR} ${NLP_DATA_ARCHIVE})
 
-	set(QAT_NLP_TEST_FILE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/qat_int8_nlp_comparison.py")
-
 	# QAT2 Ernie
 	set(QAT2_ERNIE_MODEL_ARCHIVE "ernie_qat.tar.gz")
 	set(QAT2_ERNIE_MODEL_DIR "${QAT_INSTALL_DIR}/Ernie_qat")
 	download_qat_model(${QAT2_ERNIE_MODEL_DIR} ${QAT2_ERNIE_MODEL_ARCHIVE})
-	inference_qat2_int8_nlp_test(test_qat2_int8_ernie_mkldnn ${QAT2_ERNIE_MODEL_DIR}/Ernie_qat ${NLP_DATA_PATH} ${NLP_LABLES_PATH} ${QAT_NLP_TEST_FILE_PATH} true)
+	inference_qat2_int8_nlp_test(test_qat2_int8_ernie_mkldnn ${QAT2_ERNIE_MODEL_DIR}/Ernie_qat ${NLP_DATA_PATH} ${NLP_LABLES_PATH} ${QAT2_NLP_QUANTIZED_OPS})
 
         ### Save QAT2 FP32 model or QAT2 INT8 model
 
-	set(SAVE_QAT2_MODEL_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/save_qat_model.py")
 	set(QAT2_INT8_SAVE_PATH "${QAT_INSTALL_DIR}/ResNet50_qat2_int8")
 	set(QAT2_FP32_SAVE_PATH "${QAT_INSTALL_DIR}/ResNet50_qat2_fp32")
-	save_qat_model_test(save_qat2_model_resnet50 ${QAT2_RESNET50_MODEL_DIR}/ResNet50_qat_perf/float ${QAT2_FP32_SAVE_PATH} ${QAT2_INT8_SAVE_PATH} ${SAVE_QAT2_MODEL_SCRIPT} true)
+	save_qat_model_test(save_qat2_model_resnet50 ${QAT2_RESNET50_MODEL_DIR}/ResNet50_qat_perf/float ${QAT2_FP32_SAVE_PATH} ${QAT2_INT8_SAVE_PATH} ${QAT2_IC_QUANTIZED_OPS})
 
 	set(QAT2_INT8_ERNIE_SAVE_PATH "${QAT_INSTALL_DIR}/Ernie_qat2_int8")
 	set(QAT2_FP32_ERNIE_SAVE_PATH "${QAT_INSTALL_DIR}/Ernie_qat2_fp32")
-	save_qat_model_test(save_qat2_model_ernie ${QAT2_ERNIE_MODEL_DIR}/Ernie_qat/float ${QAT2_FP32_ERNIE_SAVE_PATH} ${QAT2_INT8_ERNIE_SAVE_PATH} ${SAVE_QAT2_MODEL_SCRIPT} true)
+	save_qat_model_test(save_qat2_model_ernie ${QAT2_ERNIE_MODEL_DIR}/Ernie_qat/float ${QAT2_FP32_ERNIE_SAVE_PATH} ${QAT2_INT8_ERNIE_SAVE_PATH} ${QAT2_NLP_QUANTIZED_OPS})
 endif()
 
 # Since the tests for INT8 and QAT FP32 & INT8 comparison support only testing 
