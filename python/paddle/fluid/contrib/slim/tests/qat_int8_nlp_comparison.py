@@ -46,9 +46,7 @@ def parse_args():
         action='store_true',
         help='If used, the graph of QAT model is drawn.')
     parser.add_argument(
-        '--qat_model', type=str, default='', help='A path to a QAT model.')
-    parser.add_argument(
-        '--fp32_model',
+        '--only_model',
         type=str,
         default='',
         help='A path to an FP32 model. If empty, the QAT model will be used for FP32 inference.'
@@ -241,9 +239,7 @@ class QatInt8NLPComparisonTest(unittest.TestCase):
         if not fluid.core.is_compiled_with_mkldnn():
             return
 
-        qat_model_path = test_case_args.qat_model
-        assert qat_model_path, 'The QAT model path cannot be empty. Please, use the --qat_model option.'
-        fp32_model_path = test_case_args.fp32_model if test_case_args.fp32_model else qat_model_path
+        only_model_path = test_case_args.only_model
         data_path = test_case_args.infer_data
         assert data_path, 'The dataset path cannot be empty. Please, use the --infer_data option.'
         labels_path = test_case_args.labels
@@ -255,8 +251,7 @@ class QatInt8NLPComparisonTest(unittest.TestCase):
         self._quantized_ops = set(test_case_args.quantized_ops.split(','))
 
         _logger.info('QAT FP32 & INT8 prediction run.')
-        _logger.info('QAT model: {0}'.format(qat_model_path))
-        _logger.info('FP32 model: {0}'.format(fp32_model_path))
+        _logger.info('FP32 model: {0}'.format(only_model_path))
         _logger.info('Dataset: {0}'.format(data_path))
         _logger.info('Labels: {0}'.format(labels_path))
         _logger.info('Batch size: {0}'.format(batch_size))
@@ -264,31 +259,32 @@ class QatInt8NLPComparisonTest(unittest.TestCase):
         _logger.info('Accuracy drop threshold: {0}.'.format(acc_diff_threshold))
         _logger.info('Quantized ops: {0}.'.format(self._quantized_ops))
 
-        _logger.info('--- QAT FP32 prediction start ---')
+        _logger.info('--- Only one model start ---')
         val_reader = paddle.batch(
             self._reader_creator(data_path, labels_path), batch_size=batch_size)
         fp32_acc, fp32_pps, fp32_lat = self._predict(
             val_reader,
-            fp32_model_path,
+            only_model_path,
             batch_size,
             batch_num,
             skip_batch_num,
             transform_to_int8=False)
-        _logger.info('FP32: avg accuracy: {0:.6f}'.format(fp32_acc))
-        _logger.info('--- QAT INT8 prediction start ---')
-        val_reader = paddle.batch(
-            self._reader_creator(data_path, labels_path), batch_size=batch_size)
-        int8_acc, int8_pps, int8_lat = self._predict(
-            val_reader,
-            qat_model_path,
-            batch_size,
-            batch_num,
-            skip_batch_num,
-            transform_to_int8=True)
-        _logger.info('INT8: avg accuracy: {0:.6f}'.format(int8_acc))
+        _logger.info('Only one model: avg accuracy: {0:.6f}'.format(fp32_acc))
+        # _logger.info('Only one model: avg accuracy: {0:.6f}'.format(fp32_acc))
+        # _logger.info('--- QAT INT8 prediction start ---')
+        # val_reader = paddle.batch(
+        #     self._reader_creator(data_path, labels_path), batch_size=batch_size)
+        # int8_acc, int8_pps, int8_lat = self._predict(
+        #     val_reader,
+        #     qat_model_path,
+        #     batch_size,
+        #     batch_num,
+        #     skip_batch_num,
+        #     transform_to_int8=True)
+        # _logger.info('INT8: avg accuracy: {0:.6f}'.format(int8_acc))
 
-        self._summarize_performance(fp32_pps, fp32_lat, int8_pps, int8_lat)
-        self._compare_accuracy(fp32_acc, int8_acc, acc_diff_threshold)
+        # self._summarize_performance(fp32_pps, fp32_lat, int8_pps, int8_lat)
+        # self._compare_accuracy(fp32_acc, int8_acc, acc_diff_threshold)
 
 
 if __name__ == '__main__':
