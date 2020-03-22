@@ -185,63 +185,71 @@ Use a debugger (e.g. GDB, VS Code)
 
 Some examples are as shown as follows (Tested with GDB 7.6.1)
 ### 4.1 Inspecting Tensor data
-filter is available and initialized Tensor* with shape [64,3,7,7]
-```
-(gdb) p filter->data<float>()[0]@64*3*7*7
-```
-output:
-```
-(gdb) $20 = {0.159251779, -0.159962952, -0.182004049, 0.0299564917, .....}
-```
+* filter is available and initialized Tensor* with shape [64,3,7,7]
+    ```
+    (gdb) p filter->data<float>()[0]@64*3*7*7
+    ```
+    output:
+    ```
+    (gdb) $20 = {0.159251779, -0.159962952, -0.182004049, 0.0299564917, .....}
+    ```
 ### 4.2. Saving content Tensor to the file using builtin GDB python interpreter
-bias is a 1D tensor of shape [64]
-```
-(gdb) pi open("mylog.txt","w").write(gdb.execute('print bias->data<float>()[0]@64', to_string=True))   
-```
-Note: GDB is inserting some control symbols that User removes before comparing buffers to each other
+* bias is a 1D tensor of shape [64]
+    ```
+    (gdb) pi open("mylog.txt","w").write(gdb.execute('print bias->data<float>()[0]@64', to_string=True))   
+    ```
+    Note: GDB is inserting some control symbols that User removes before comparing buffers to each other
 ### 4.3. Automating debugging with scripting
-#### Example 1 : Break into creation code of MKL-DNN conv , but after executing two operators
-```
-cgdb -x /home/jczaja/myscript.gdb --args  ./paddle/fluid/inference/tests/api/test_analyzer_image_classification --infer_model=/home/jczaja/paddle/build-debug/third_party/inference_demo/resnet50/model --disable_mkldnn_fc=true --gtest_filter=*profile_mkldnn
-```
-myscript.gdb:
-```
-start
-b naive_executor.cc:58
-c
-c
-c
-d
-b mkldnn_reuse.h:950
-c
-```
-#### Example 2 : Start catching exceptions starting from NaiveExecutor::Run()
-```
-gdb -x /home/jczaja/myscript2.gdb --args  ./paddle/fluid/inference/tests/api/test_analyzer_image_classification --infer_model=/home/jczaja/paddle/build-debug/third_party/inference_demo/resnet50/model --disable_mkldnn_fc=true --gtest_filter=*profile_mkldnn
-```
-myscript2.gdb:
-```
-start
-b paddle::framework::NaiveExecutor::Run()
-c
-catch throw
-c
-```
+* Example 1 : Break into creation code of MKL-DNN conv , but after executing two operators
+    ```
+    cgdb -x /home/jczaja/myscript.gdb --args  ./paddle/fluid/inference/tests/api/test_analyzer_image_classification --infer_model=/home/jczaja/paddle/build-debug/third_party/inference_demo/resnet50/model --disable_mkldnn_fc=true --gtest_filter=*profile_mkldnn
+    ```
+    myscript.gdb:
+    ```
+    start
+    b naive_executor.cc:58
+    c
+    c
+    c
+    d
+    b mkldnn_reuse.h:950
+    c
+    ```
+* Example 2 : Start catching exceptions starting from NaiveExecutor::Run()
+    ```
+    gdb -x /home/jczaja/myscript2.gdb --args  ./paddle/fluid/inference/tests/api/test_analyzer_image_classification --infer_model=/home/jczaja/paddle/build-debug/third_party/inference_demo/resnet50/model --disable_mkldnn_fc=true --gtest_filter=*profile_mkldnn
+    ```
+    myscript2.gdb:
+    ```
+    start
+    b paddle::framework::NaiveExecutor::Run()
+    c
+    catch throw
+    c
+    ```
+### 4.3 Print output inany format you want
+* You may want to print numbers in hexadecimal or pointers in decimal. Or you might want to see the data at an address in memory in any data type. For example, the data at a certain address is output in INT8 format. To do this, specify the output format when printing values.
+Reference[Ref doc](https://sourceware.org/gdb/onlinedocs/gdb/Output-Formats.html)
+    ```
+    (gdb) set print pretty
+    (gdb) p *output
+    (gdb) p/d (int8_t*)(output->holder_)@5*128*768
+    ```
 ### 4.4 Catching NANs, overflow and underflow
 1. Change source code of Paddle:
-```
-#include <fenv.h>
-….
-feenableexcept(FE_ALL_EXCEPT & ~FE_INEXACT & ~FE_UNDERFLOW & ~FE_OVERFLOW);
-....
-<Code for which exception will trigger on Floating point computations>
-....
-fedisableexcept(FE_ALL_EXCEPT & ~FE_INEXACT & ~FE_UNDERFLOW & ~FE_OVERFLOW);
-```
+    ```
+    #include <fenv.h>
+    ….
+    feenableexcept(FE_ALL_EXCEPT & ~FE_INEXACT & ~FE_UNDERFLOW & ~FE_OVERFLOW);
+    ....
+    <Code for which exception will trigger on Floating point computations>
+    ....
+    fedisableexcept(FE_ALL_EXCEPT & ~FE_INEXACT & ~FE_UNDERFLOW & ~FE_OVERFLOW);
+    ```
 2. Build it.
 3. Debug. In GDB:
-```
-(gdb) start
-(gdb) catch throw
-(gdb) c
-```
+    ```
+    (gdb) start
+    (gdb) catch throw
+    (gdb) c
+    ```
