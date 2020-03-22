@@ -174,19 +174,18 @@ dnnl_verbose,exec,cpu,convolution,jit:avx2,forward_training,src_f32::blocked:aBc
 
 ### 3.2 GLOG_V
 Please refer to [glog_v guide](http://rpg.ifi.uzh.ch/docs/glog.html)
-
-## Basic debugging techniques
-* Add printing debug messages (e.g. using `LOG(INFO) << “a message”;` in C-API, or `_logger.info(‘a message’)` in python)
+* Add printing log messages (e.g. using `LOG(INFO) << “a message”;` in C-API, or `_logger.info(‘a message’)` in python)
     * a release build is enough, rebuilding it is usually faster,
     * use GLOG_v environment variable flag to print detailed information on Paddle’s internals usage and execution (see the guide http://rpg.ifi.uzh.ch/docs/glog.html)
-    * use DNNL_VERBOSE (MKLDNN_VERBOSE) environment variable flag to print detailed information on DNNL primitives creation and execution (on the usage of the flag, see below),
-* Use a debugger (e.g. GDB, VS Code)
-    * interactive, catching exceptions, breakpoints, step by step execution, etc.
-    * allows for more thorough analysis of what is happening during the execution.
-    * a build with debugging symbols is required (`Debug` or `RelWithDebInfo`), rebuilding debug version is usually slower,
-## Some useful GDB hints
-(Tested with GDB 7.6.1)
-### 1. Inspecting Tensor data
+    * use DNNL_VERBOSE (MKLDNN_VERBOSE) environment variable flag to print detailed information on DNNL primitives creation and execution (on the usage of the flag, see above),
+
+## 4 Basic debugging techniques
+Use a debugger (e.g. GDB, VS Code)
+* interactive, catching exceptions, breakpoints, step by step execution, etc.
+* allows for more thorough analysis of what is happening during the execution.
+* a build with debugging symbols is required (`Debug` or `RelWithDebInfo`), rebuilding debug version is usually slower,
+Some examples are as shown below: (Tested with GDB 7.6.1)
+### 4.1 Inspecting Tensor data
 filter is available and initialized Tensor* with shape [64,3,7,7]
 ```
 (gdb) p filter->data<float>()[0]@64*3*7*7
@@ -195,13 +194,13 @@ output:
 ```
 (gdb) $20 = {0.159251779, -0.159962952, -0.182004049, 0.0299564917, .....}
 ```
-### 2. Saving content Tensor to the file using builtin GDB python interpreter
+### 4.2. Saving content Tensor to the file using builtin GDB python interpreter
 bias is a 1D tensor of shape [64]
 ```
 (gdb) pi open("mylog.txt","w").write(gdb.execute('print bias->data<float>()[0]@64', to_string=True))   
 ```
 Note: GDB is inserting some control symbols that User removes before comparing buffers to each other
-### 3. Automating debugging with scripting
+### 4.3. Automating debugging with scripting
 #### Example 1 : Break into creation code of MKL-DNN conv , but after executing two operators
 ```
 cgdb -x /home/jczaja/myscript.gdb --args  ./paddle/fluid/inference/tests/api/test_analyzer_image_classification --infer_model=/home/jczaja/paddle/build-debug/third_party/inference_demo/resnet50/model --disable_mkldnn_fc=true --gtest_filter=*profile_mkldnn
@@ -229,7 +228,7 @@ c
 catch throw
 c
 ```
-### 4. Catching NANs, overflow and underflow
+### 4.4 Catching NANs, overflow and underflow
 1. Change source code of Paddle:
 ```
 #include <fenv.h>
