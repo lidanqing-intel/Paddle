@@ -87,19 +87,19 @@
         * 从第一个量化运算符开始，比较其QAT FP32和INT8模型之间的输入和输出张量-它们应包含非常相似的数字，如QAT中的浮点数和INT8模型中的整数，
         * 对于具有权重的运算符（例如conv2d，fc），比较QAT和INT8模型之间的权重张量；它们的值应该非常相似。
 ## 2. 在DNNL中禁用选定的运算符实现
-当我们诊断特定的DNNL运算符存在问题时，可以修改DNNL以删除该运算符的某些实现（例如AVX512）。例如，这是进行卷积的方法。
-1. 禁用DNNL的特定实现
-    * 签入DNNL_VERBOSE调用哪个实现
-    * 派生mkl-dnn并修改cpu_engine.cpp，但是删除您期望的实现是错误的：
+当我们发现是特定的DNNL运算符存在问题时，可以修改DNNL以删除该运算符的某些实现（例如AVX512）。下面以卷积为例进行操作。
+1. 禁用DNNL的某些特定实现
+    * 使用DNNL_VERBOSE查看调用哪个实现
+    * Folk mkl-dnn并修改cpu_engine.cpp，但是删除您觉得是错误的实现：
     ```
-    INSTANCE（jit_avx512_common_convolution_fwd_t <f32>），
-    INSTANCE（jit_avx512_common_convolution_bwd_data_t <f32>），
-    // INSTANCE（jit_avx512_common_convolution_bwd_weights_t <f32>），
-    INSTANCE（jit_avx2_dw_convolution_fwd_t），
-    INSTANCE（jit_avx2_dw_convolution_bwd_data_t），
+    INSTANCE(jit_avx512_common_convolution_fwd_t<f32>),
+    INSTANCE(jit_avx512_common_convolution_bwd_data_t<f32>),
+    //INSTANCE(jit_avx512_common_convolution_bwd_weights_t<f32>),   
+    INSTANCE(jit_avx2_dw_convolution_fwd_t),
+    INSTANCE(jit_avx2_dw_convolution_bwd_data_t),
     ```
-2. 使您的mkl-dnn可用于PaddlePaddle（修改mkldnn.cmake）。
-3. 禁用DNNL中设置的指令。修改cpu_isa_traits.hpp文件，将true替换为false以禁用某些平台：
+2. 使您的mkl-dnn可用于PaddlePaddle(修改mkldnn.cmake)。
+3. 禁用DNNL中指令集。修改cpu_isa_traits.hpp文件，将true替换为false以禁用某些平台：
    cpu_isa_traits.hpp：
    ```
     88 static inline bool mayiuse(const cpu_isa_t cpu_isa) {
