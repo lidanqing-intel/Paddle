@@ -5,8 +5,7 @@
 2. Introducing new hardware.
 3. Developing new functionality (e.g. adding new operator kernel).
 4. Testing with different environments, languages, data loaders 
-    * e.g. python vs. C-API
-    * e.g. training on python with PIL, inference on C++ with OpenCV
+    * e.g. python vs. C-API, training on python with PIL, inference on C++ with OpenCV
     * e.g. training on GPU, inference on CPU, with different kernel implementations on GPU and CPU. Use case: When working on `batch_norm`, the `sqrt` function implementation on GPU and native CPU had lower precision, whereas MKL-DNN implementation had much higher precision.
 
 ## 1. General accuracy investigation guidance
@@ -33,7 +32,6 @@
         * test_analyzer_resnet50 fails on E5-2660 v4 machine · Issue #18005 · PaddlePaddle/Paddle - difference in results between AVX2 and AVX512 ISA used + large magnitude of data values with very small accuracy diff threshold,
         * [MKL-DNN] Failure to run face model (demark) · Issue #18658 · PaddlePaddle/Paddle - after switching from machine with AVX2 to one with AVX512, the NCHW16C format was chosen (instead of NCHW for AVX2) by DNNL-based `tanh` operator kernel, then the `tanh`’s output, also in NCHW16C format was passed to the `fetch` operator which could not handle the NCHW16C format properly,
         * test_slim_int8_googlenet, test_analyzer_int8_googlenet etc fails on new 5117 machine · Issue #19505 · PaddlePaddle/Paddle - regression introduced by a commit + misconfigured machine (missing ISA support in the used CPU) + difference between AVX2 and AVX512 results + lack of relative error metric for data of large magnitude
-
 * Is the issue present in the Release version and not in the Debug version (or vice versa)?
     * use printing debug messages in Release version,
     * if RelWithDebInfo version reproduces the issue try also a debugger (for debugging hints see below).
@@ -92,8 +90,8 @@
         * for operators with weights (e.g. conv2d, fc) compare the weights tensors between QAT and INT8 model; their values should be very similar.
 ## 2. Disabling selected operator implementation inside DNNL
 When we diagnose that there is a problem with a specific DNNL operator, it is possible to modify DNNL to remove some of implementations (for example AVX512) for the operator. As an example, this is how to do that for convolution.
-* Disable specific implementation of DNNL
-    * a. Check in DNNL_VERBOSE which implementation is called
+1. Disable specific implementation of DNNL
+    * Check in DNNL_VERBOSE which implementation is called
     * fork mkl-dnn and modify cpu_engine.cpp , but removing implementation you expect is faulty:
     ```
     INSTANCE(jit_avx512_common_convolution_fwd_t<f32>),
@@ -102,10 +100,10 @@ When we diagnose that there is a problem with a specific DNNL operator, it is po
     INSTANCE(jit_avx2_dw_convolution_fwd_t),
     INSTANCE(jit_avx2_dw_convolution_bwd_data_t),
     ```
-* Make your mkl-dnn available to PaddlePaddle (modify mkldnn.cmake).
-* Disable instruction set in DNNL. Modify the cpu_isa_traits.hpp file, replace true with false to disable some of the platforms:
+2. Make your mkl-dnn available to PaddlePaddle (modify mkldnn.cmake).
+3. Disable instruction set in DNNL. Modify the cpu_isa_traits.hpp file, replace true with false to disable some of the platforms:
 
-* cpu_isa_traits.hpp:
+   cpu_isa_traits.hpp:
     ```
     88 static inline bool mayiuse(const cpu_isa_t cpu_isa) {
     89     using namespace Xbyak::util;
@@ -184,7 +182,8 @@ Use a debugger (e.g. GDB, VS Code)
 * interactive, catching exceptions, breakpoints, step by step execution, etc.
 * allows for more thorough analysis of what is happening during the execution.
 * a build with debugging symbols is required (`Debug` or `RelWithDebInfo`), rebuilding debug version is usually slower,
-Some examples are as shown below: (Tested with GDB 7.6.1)
+
+Some examples are as shown as follows (Tested with GDB 7.6.1)
 ### 4.1 Inspecting Tensor data
 filter is available and initialized Tensor* with shape [64,3,7,7]
 ```
