@@ -122,8 +122,29 @@ void FusionGRUOp::InferShape(framework::InferShapeContext* ctx) const {
 
 framework::OpKernelType FusionGRUOp::GetExpectedKernelType(
     const framework::ExecutionContext& ctx) const {
-  return framework::OpKernelType(
-      OperatorWithKernel::IndicateVarDataType(ctx, "X"), ctx.device_context());
+  framework::LibraryType library = framework::LibraryType::kPlain;
+  framework::DataLayout layout = framework::DataLayout::kAnyLayout;
+  int customized_type_value =
+      framework::OpKernelType::kDefaultCustomizedTypeValue;
+  auto input_data_type = OperatorWithKernel::IndicateVarDataType(ctx, "X");
+
+#ifdef PADDLE_WITH_MKLDNN
+  if (ctx.Attr<bool>("use_mkldnn")) {
+    library = framework::LibraryType::kMKLDNN;
+    layout = framework::DataLayout::kMKLDNN;
+    using framework::proto::VarType;
+    customized_type_value =
+        (input_data_type == VarType::INT8 || input_data_type == VarType::UINT8)
+            ? kFusionGRUMKLDNNINT8
+            : kFusionGRUMKLDNNFP32;
+    // return framework::OpKernelType(
+    //     OperatorWithKernel::IndicateVarDataType(ctx, "X"), ctx.GetPlace(),
+    //     framework::DataLayout::kMKLDNN, framework::LibraryType::kMKLDNN);
+  }
+#endif
+
+  return framework::OpKernelType(input_data_type, ctx.GetPlace(), layout,
+                                 library, customized_type_value);
 }
 
 void FusionGRUOpMaker::Make() {
@@ -183,10 +204,26 @@ void FusionGRUOpMaker::Make() {
                 "(bool, default: True) "
                 "whether to use seq mode to compute GRU.")
       .SetDefault(true);
+  AddAttr<bool>("use_mkldnn",
+                "(bool, default false) "
+                "Only used in mkldnn kernel")
+      .SetDefault(false);
+  // AddAttr<std::string>(
+  //     "data_format",
+  //     "(string, default NCHW) Only used in "
+  //     "An optional string from: \"NHWC\", \"NCHW\". "
+  //     "Defaults to \"NHWC\". Specify the data format of the output data, "
+  //     "the input will be transformed automatically. ")
+  //     .SetDefault("AnyLayout");
   AddComment(R"DOC(
-The Fusion complete GRU Operator.
-This operator fuse the fully-connected operator into GRU, 
-more details can refer to GRU op.
+Fused GRU Operator implements calculations of the complete GRU as following:
+Comments from tomek
+$$
+update\_gate: u_t = actGate(WX_u * X + WU_u * h_{t-1} + b_u) \\
+reset\_gate: r_t = actGate(WX_r * X + WU_r * h_{t-1} + b_r)  \\
+output\_candidate: {h}_t = actNode(WX_c + WU_c * dot(r_t, h_{t-1}) + b_c) \\
+output: h_t = dot((1 - u_t), h_{t-1}) + dot(u_t, {h}_t)
+$$
 )DOC");
 }
 

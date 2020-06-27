@@ -20,6 +20,7 @@ namespace operators {
 
 using LoDTensor = framework::LoDTensor;
 using Tensor = framework::Tensor;
+enum { kFusionGRUMKLDNNFP32 = 11, kFusionGRUMKLDNNINT8 = 12 };
 
 class FusionGRUOp : public framework::OperatorWithKernel {
  public:

@@ -49,9 +49,11 @@ class TestFusionGRUOp(OpTest):
 
     def setUp(self):
         self.op_type = "fusion_gru"
-        self.lod = [[2, 4, 3]]
-        self.M = 3
-        self.D = 5
+        self.lod = [
+            [2, 4, 3]
+        ]  # T is the total length of the whole batch of sentences length. The lod will separate the long sequence to a batch of small sentences
+        self.M = 3  # M is character feature size, like channel size. It may come from some directory
+        self.D = 5  # D is the H0[0], it it like the first dimension of the output
         self.is_reverse = False
         self.with_h0 = True
         self.with_bias = True
