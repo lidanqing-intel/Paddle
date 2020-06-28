@@ -16,7 +16,7 @@ limitations under the License. */
 #include <vector>
 // #include "paddle/fluid/framework/op_registry.h"
 #include "paddle/fluid/framework/tensor.h"
-#include "paddle/fluid/operators/fc_op.h"
+#include "paddle/fluid/operators/fused/fusion_gru_op.h"
 #ifdef PADDLE_WITH_MKLDNN
 #include "paddle/fluid/platform/mkldnn_helper.h"
 #endif
@@ -354,15 +354,13 @@ class FusionGRUMKLDNNKernel : public framework::OpKernel<T> {
 
     // Primitive arguments
     std::unordered_map<int, memory> gru_args;
-    gru_args.insert({DNNL_ARG_SRC_LAYER, src_layer_mem});
-    gru_args.insert({DNNL_ARG_WEIGHTS_LAYER, lstm_weights_layer_mem});
-    gru_args.insert({DNNL_ARG_WEIGHTS_ITER, lstm_weights_iter_mem});
-    gru_args.insert({DNNL_ARG_BIAS, bias_mem});
-    gru_args.insert({DNNL_ARG_DST_LAYER, dst_layer_mem});
-    gru_args.insert({DNNL_ARG_SRC_ITER, src_iter_mem});
-    gru_args.insert({DNNL_ARG_SRC_ITER_C, src_iter_c_mem});
-    gru_args.insert({DNNL_ARG_DST_ITER, dst_iter_mem});
-    gru_args.insert({DNNL_ARG_DST_ITER_C, dst_iter_c_mem});
+    gru_args.insert({DNNL_ARG_SRC_LAYER, input_memory});
+    gru_args.insert({DNNL_ARG_SRC_ITER, h0_memory});
+    gru_args.insert({DNNL_ARG_WEIGHTS_LAYER, weight_x_memory});
+    gru_args.insert({DNNL_ARG_WEIGHTS_ITER, weight_h_memory});
+    gru_args.insert({DNNL_ARG_BIAS, bias_memory});
+    gru_args.insert({DNNL_ARG_DST_LAYER, tbatch_hidden_memory});
+    // gru_args.insert({DNNL_ARG_DST_ITER, tbatch_hidden_memory});
     gru_args.insert({DNNL_ARG_WORKSPACE, workspace_mem});
 
     mkldnn::stream astream(mkldnn_engine);
@@ -410,17 +408,7 @@ class FusionGRUMKLDNNKernel : public framework::OpKernel<T> {
 }  // namespace paddle
 
 namespace ops = paddle::operators;
-
-// REGISTER_OP_KERNEL(fusion_gru, MKLDNN, ::paddle::platform::CPUPlace,
-//                    ops::FusionGRUMKLDNNKernel<float>,
-//                    ops::FusionGRUMKLDNNKernel<int8_t>,
-//                    ops::FusionGRUMKLDNNKernel<uint8_t>)
-
 REGISTER_OP_KERNEL_WITH_CUSTOM_TYPE(fusion_gru, MKLDNN,
                                     ::paddle::platform::CPUPlace, FP32,
                                     ops::kFusionGRUMKLDNNFP32,
-                                    ops::FusionGRUMKLDNNKernel<float>)
-
-// REGISTER_OP_KERNEL_WITH_CUSTOM_TYPE(fc, MKLDNN, ::paddle::platform::CPUPlace,
-//                                     FP32, ops::kFCMKLDNNFP32,
-//                                     ops::FCMKLDNNOpKernel<float);
+                                    ops::FusionGRUMKLDNNKernel<float>);

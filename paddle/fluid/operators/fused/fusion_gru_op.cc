@@ -122,29 +122,29 @@ void FusionGRUOp::InferShape(framework::InferShapeContext* ctx) const {
 
 framework::OpKernelType FusionGRUOp::GetExpectedKernelType(
     const framework::ExecutionContext& ctx) const {
-  framework::LibraryType library = framework::LibraryType::kPlain;
-  framework::DataLayout layout = framework::DataLayout::kAnyLayout;
+  // framework::LibraryType library = framework::LibraryType::kPlain;
+  // framework::DataLayout layout = framework::DataLayout::kAnyLayout;
   int customized_type_value =
       framework::OpKernelType::kDefaultCustomizedTypeValue;
   auto input_data_type = OperatorWithKernel::IndicateVarDataType(ctx, "X");
 
 #ifdef PADDLE_WITH_MKLDNN
   if (ctx.Attr<bool>("use_mkldnn")) {
-    library = framework::LibraryType::kMKLDNN;
-    layout = framework::DataLayout::kMKLDNN;
+    // library = framework::LibraryType::kMKLDNN;
+    // layout = framework::DataLayout::kMKLDNN;
     using framework::proto::VarType;
     customized_type_value =
         (input_data_type == VarType::INT8 || input_data_type == VarType::UINT8)
             ? kFusionGRUMKLDNNINT8
             : kFusionGRUMKLDNNFP32;
-    // return framework::OpKernelType(
-    //     OperatorWithKernel::IndicateVarDataType(ctx, "X"), ctx.GetPlace(),
-    //     framework::DataLayout::kMKLDNN, framework::LibraryType::kMKLDNN);
+    std::cout << "WARNING! I AM HERE!" << std::endl;
+    return framework::OpKernelType(
+        input_data_type, ctx.GetPlace(), framework::DataLayout::kMKLDNN,
+        framework::LibraryType::kMKLDNN, customized_type_value);
   }
 #endif
-
-  return framework::OpKernelType(input_data_type, ctx.GetPlace(), layout,
-                                 library, customized_type_value);
+  return framework::OpKernelType(
+      OperatorWithKernel::IndicateVarDataType(ctx, "X"), ctx.device_context());
 }
 
 void FusionGRUOpMaker::Make() {

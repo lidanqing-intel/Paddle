@@ -17,10 +17,11 @@ limitations under the License. */
 
 namespace paddle {
 namespace operators {
+constexpr int kFusionGRUMKLDNNFP32 = 1;
+constexpr int kFusionGRUMKLDNNINT8 = 2;
 
 using LoDTensor = framework::LoDTensor;
 using Tensor = framework::Tensor;
-enum { kFusionGRUMKLDNNFP32 = 11, kFusionGRUMKLDNNINT8 = 12 };
 
 class FusionGRUOp : public framework::OperatorWithKernel {
  public:
