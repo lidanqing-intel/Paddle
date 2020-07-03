@@ -48,7 +48,8 @@ _fake_quant_dequant_op_list = [
 _out_scale_op_list = [
     "conv2d", "depthwise_conv2d", "mul", "matmul", "relu", "leaky_relu",
     "relu6", "sigmoid", "tanh", "prelu", "swish", "softmax", "batch_norm",
-    "elementwise_add", "pool2d", "reshape2", "transpose2", "concat"
+    "elementwise_add", "pool2d", "reshape2", "transpose2", "concat",
+    "layer_norm", "lookup_table", "stack"
 ]
 
 # list op real input and output names, to avoid processing input such as AxisTensor.
@@ -90,6 +91,9 @@ _op_real_in_out_name = {
     "dropout": [["X"], ["Out"]],
     "batch_norm": [["X"], ["Y"]],
     "sigmoid": [["X"], ["Out"]],
+    "layer_norm": [["X", "Bias", "Scale"], ["Y"]],
+    "stack": [["X"], ["Y"]],
+    "lookup_table": [["Ids", "W"], ["Out"]]
 }
 
 
@@ -1398,7 +1402,7 @@ class OutScaleForTrainingPass(object):
         These output scales may be used by tensorRT or some other inference engines.
 
         Args:
-            scope(fluid.Scope): The scope is used to initialize these new parameters.
+            scope(fluid.Scope): The scope iPs used to initialize these new parameters.
             place(fluid.CPUPlace|fluid.CUDAPlace): The place is used to initialize new parameters.
             moving_rate(float): The decay coefficient of moving average. The default value is 0.9.
         """

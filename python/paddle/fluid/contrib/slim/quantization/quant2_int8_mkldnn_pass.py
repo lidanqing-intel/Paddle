@@ -85,6 +85,7 @@ class Quant2Int8MkldnnPass(object):
         graph = self._compute_weight_scales(graph)
         graph = self._update_relu_output_scales(graph)
         graph = self._propagate_scales(graph)
+        graph = self._apply_pass(graph, 'simplify_with_basic_ops_pass')
         graph = self._quantize_fp32_graph(graph)
         graph = self._optimize_int8_graph(graph)
         graph = self._cleanup(graph)
