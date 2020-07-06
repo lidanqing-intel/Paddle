@@ -49,7 +49,7 @@ _out_scale_op_list = [
     "conv2d", "depthwise_conv2d", "mul", "matmul", "relu", "leaky_relu",
     "relu6", "sigmoid", "tanh", "prelu", "swish", "softmax", "batch_norm",
     "elementwise_add", "pool2d", "reshape2", "transpose2", "concat",
-    "layer_norm", "lookup_table", "stack"
+    "layer_norm", "stack"
 ]
 
 # list op real input and output names, to avoid processing input such as AxisTensor.
@@ -93,7 +93,6 @@ _op_real_in_out_name = {
     "sigmoid": [["X"], ["Out"]],
     "layer_norm": [["X", "Bias", "Scale"], ["Y"]],
     "stack": [["X"], ["Y"]],
-    "lookup_table": [["Ids", "W"], ["Out"]]
 }
 
 
