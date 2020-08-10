@@ -13,20 +13,19 @@
 // limitations under the License.
 
 #pragma once
-#include <memory>
-#include <mutex>
-#include <string>
-#include <tuple>
-#include <typeindex>
-#include <unordered_map>
-#include <utility>
-#include <vector>
-
 #include <cstdint>
 #include <cstring>
 #include <dnnl.hpp>
-#include "boost/crc.hpp"
-
+#include <memory>                                 //NOLINT
+#include <mutex>                                  //NOLINT
+#include <string>                                 //NOLINT
+#include <tuple>                                  //NOLINT
+#include <typeindex>                              //NOLINT
+#include <unordered_map>                          //NOLINT
+#include <utility>                                //NOLINT
+#include <vector>                                 //NOLINT
+#include "boost/crc.hpp"                          //NOLINT
+#include "paddle/fluid/operators/jit/registry.h"  //NOLINT
 namespace paddle {
 namespace framework {
 
@@ -47,26 +46,11 @@ constexpr const char* CYAN() { return "\033[0;36m"; }
 #define msg_green(x) msg_color(colors::GREEN(), x)
 }  // namespace colors
 
-template <DataLayout LayoutType>
-struct ConvPaddleLayout2Mkldnn;
-
-template <>
-struct ConvPaddleLayout2Mkldnn<DataLayout::kNCHW> {
-  static const dnnl::memory::format_tag value = dnnl::memory::format_tag::nchw;
-};
-
-template <>
-struct ConvPaddleLayout2Mkldnn<DataLayout::kNHWC> {
-  static const dnnl::memory::format_tag value = dnnl::memory::format_tag::nhwc;
-};
-
 template <class L>
 dnnl::memory::format_tag tensor_layout2_mkldnn(L layout) {
-  using tag = dnnl::memory::format_tag;
+  if (layout == DataLayout::kNHWC) return dnnl::memory::format_tag::nhwc;
 
-  if (layout == DataLayout::kNHWC) return tag::nhwc;
-
-  return tag::nchw;
+  return dnnl::memory::format_tag::nchw;
 }
 
 template <class T>
@@ -169,24 +153,21 @@ class TensorDumpConfig {
   size_t limit_1;
   size_t limit_4;
   std::string filename;
-
+  bool synchronized;
   struct OperatorDetails {
     const std::string name;
     DataLayout layout;
     OperatorDetails(const std::string& _name,
                     DataLayout _layout = getDefaultDataLayout())
         : name{_name}, layout{_layout} {}
-    const std::string getLayoutString() { return DataLayoutToString(layout); }
   };
-
   // std::vector<std::string> ops;
   std::vector<OperatorDetails> ops;
 
-  bool synchronized;
   TensorDumpConfig()
       : limit_1(128),
         limit_4(128),
-        filename("/dev/stdout"),
+        filename("/dev/stdout/"),
         synchronized(false) {
     env_exe("TENSOR_DUMP_OPERATORS", [this](const char* value) {
       auto tmp_ops = split(value, ',');
@@ -206,7 +187,7 @@ class TensorDumpConfig {
 
       for (auto& item : ops) {
         msg_green("config for operator " << item.name << ","
-                                         << item.getLayoutString());
+                                         << DataLayoutToString(item.layout));
       }
     });
 
@@ -239,13 +220,11 @@ class TensorDumpConfig {
                           return item.name == name;
                         }) != ops.end();
   }
-
   auto fetchOperator(const char* name) -> decltype(ops.begin()) {
     return std::find_if(
         ops.begin(), ops.end(),
         [name](const OperatorDetails& item) { return item.name == name; });
   }
-
   auto fetchOperatorEnd() -> decltype(ops.end()) { return ops.end(); }
 
   DataLayout getLayoutForOperator(const char* name) {
@@ -261,10 +240,11 @@ class TensorDumpConfig {
 
   bool is_synchronized() const { return synchronized; }
   const std::string& getFilename() { return filename; }
-  std::ofstream& getOutputStream() {
-    static std::unique_ptr<std::ofstream> ptr(
-        new std::ofstream(filename.c_str()));
-    return *ptr;
+  std::unique_ptr<std::ofstream> getOutputStream(std::string label,
+                                                 std::string name,
+                                                 DataLayout layout) {
+    return paddle::operators::jit::make_unique<std::ofstream>(
+        (label + name + DataLayoutToString(layout)), std::ios_base::app);
   }
   size_t getLimit_1() { return limit_1; }
   size_t getLimit_4() { return limit_4; }
@@ -288,8 +268,8 @@ template <int version>
 std::ostream& operator<<(
     std::ostream& out,
     const typename TensorDumpConfig<version>::OperatorDetails& c) {
-  out << "OperatorDetails{ " << c.name << "," << c.getLayoutString() << " }"
-      << std::endl;
+  out << "OperatorDetails{ " << c.name << "," << DataLayoutToString(c.layout)
+      << " }" << std::endl;
   return out;
 }
 
@@ -375,25 +355,27 @@ struct type_desc<float> {
 };
 
 template <class U, class TensorType>
-std::ostream& operator<<(std::ostream& out,
-                         const TensorOutStreamer<U, TensorType>& ts) {
+std::unique_ptr<std::ostream> operator<<(
+    std::unique_ptr<std::ostream> out,
+    const TensorOutStreamer<U, TensorType>& ts) {
   auto& tensor = ts.tensor;
   auto& dims = tensor.dims();
   auto& conf = TensorDumpConfig<>::get();
 
-  out << std::setw(8) << std::setfill(' ') << (TensorDumpConfig<>::NextRecord())
-      << ") type=[" << type_desc<U>::name() << "]  => label=" << ts.label
-      << " name=" << ((ts.name) ? ts.name : "undef") << " crc32=" << std::hex
-      << ts.checksum() << std::dec << " elem=" << tensor.numel()
-      << " dims=" << dims.size() << "=>";
+  *out << std::setw(8) << std::setfill(' ')
+       << (TensorDumpConfig<>::NextRecord()) << ") type=["
+       << type_desc<U>::name() << "]  => label=" << ts.label
+       << " name=" << ((ts.name) ? ts.name : "undef") << " crc32=" << std::hex
+       << ts.checksum() << std::dec << " elem=" << tensor.numel()
+       << " dims=" << dims.size() << "=>";
 
   for (decltype(dims.size()) i = 0; i < dims.size(); ++i) {
-    out << "[" << dims.at(i) << "]";
+    *out << "[" << dims.at(i) << "]";
   }
 
-  out << " layout_default=" << DataLayoutToString(tensor.layout())
-      << " layout_desired=" << DataLayoutToString(ts.layout);
-  out << std::endl;
+  *out << " layout_default=" << DataLayoutToString(tensor.layout())
+       << " layout_desired=" << DataLayoutToString(ts.layout);
+  *out << std::endl;
   std::size_t br = 0;
 
   if (ts.layout != DataLayout::kAnyLayout) {
@@ -405,9 +387,9 @@ std::ostream& operator<<(std::ostream& out,
                      [&out, &br](U unit) {
                        if (type_desc<U>::break_line == br++) {
                          br = 0;
-                         out << std::endl;
+                         *out << std::endl;
                        }
-                       type_desc<U>::format(out, unit) << std::dec;
+                       type_desc<U>::format(*out, unit) << std::dec;
                      });
 
   } else {
@@ -415,13 +397,13 @@ std::ostream& operator<<(std::ostream& out,
                      [&out, &br](U unit) {
                        if (type_desc<U>::break_line == br++) {
                          br = 0;
-                         out << std::endl;
+                         *out << std::endl;
                        }
-                       type_desc<U>::format(out, unit) << std::dec;
+                       type_desc<U>::format(*out, unit) << std::dec;
                      });
   }
 
-  out << std::endl;
+  *out << std::endl;
   return out;
 }
 
@@ -460,11 +442,11 @@ struct DumpComposit {
         /* in case of parallel executor , io must be synchronized */
         std::lock_guard<decltype(TensorDumpConfig<>::getMutex())> l(
             TensorDumpConfig<>::getMutex());
-        TensorDumpConfig<>::get().getOutputStream()
+        TensorDumpConfig<>::get().getOutputStream(label, name, layout)
             << TensorOutStreamer<First, TensorType>(label, name, _tensor,
                                                     layout);
       } else {
-        TensorDumpConfig<>::get().getOutputStream()
+        TensorDumpConfig<>::get().getOutputStream(label, name, layout)
             << TensorOutStreamer<First, TensorType>(label, name, _tensor,
                                                     layout);
       }
@@ -483,10 +465,10 @@ struct DumpComposit<float> {
       /* in case of parallel executor , io must be synchronized */
       std::lock_guard<decltype(TensorDumpConfig<>::getMutex())> l(
           TensorDumpConfig<>::getMutex());
-      TensorDumpConfig<>::get().getOutputStream()
+      TensorDumpConfig<>::get().getOutputStream(label, name, layout)
           << TensorOutStreamer<float, TensorType>(label, name, _tensor, layout);
     } else {
-      TensorDumpConfig<>::get().getOutputStream()
+      TensorDumpConfig<>::get().getOutputStream(label, name, layout)
           << TensorOutStreamer<float, TensorType>(label, name, _tensor, layout);
     }
   }
