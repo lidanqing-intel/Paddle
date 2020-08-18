@@ -32,6 +32,8 @@
 #include <vector>                                 //NOLINT
 #include "boost/crc.hpp"                          //NOLINT
 #include "paddle/fluid/operators/jit/registry.h"  //NOLINT
+#include "paddle/fluid/platform/port.h"
+
 namespace paddle {
 namespace framework {
 
@@ -158,7 +160,7 @@ class TensorDumpConfig {
 
   size_t limit_1;
   size_t limit_4;
-  std::string filename;
+  std::string dirname;
   bool synchronized;
   struct OperatorDetails {
     const std::string name;
@@ -173,7 +175,7 @@ class TensorDumpConfig {
   TensorDumpConfig()
       : limit_1(128),
         limit_4(128),
-        filename("/dev/stdout/"),
+        dirname("tensor_out/"),
         synchronized(false) {
     env_exe("TENSOR_DUMP_OPERATORS", [this](const char* value) {
       auto tmp_ops = split(value, ',');
@@ -198,8 +200,8 @@ class TensorDumpConfig {
     });
 
     env_exe("TENSOR_DUMP_FILE", [this](const char* value) {
-      filename = value;
-      msg_green("output file " << filename);
+      dirname = value;
+      msg_green("output file " << dirname);
     });
 
     env_exe("TENSOR_DUMP_LIMIT_SIZEOF_1", [this](const char* value) {
@@ -245,12 +247,16 @@ class TensorDumpConfig {
   }
 
   bool is_synchronized() const { return synchronized; }
-  const std::string& getFilename() { return filename; }
+  const std::string& getFilename() { return dirname; }
   std::unique_ptr<std::ofstream> getOutputStream(std::string label,
                                                  std::string name,
                                                  DataLayout layout) {
+    // std::cout<<"WARNING!!!!!!!!!!!!!!!!"<<"label"<<label<<",
+    // name"<<name<<"layout"<<DataLayoutToString(layout)<<std::endl;
+    MkDir(dirname.c_str());
+    std::string path = dirname + label + name + DataLayoutToString(layout);
     return paddle::operators::jit::make_unique<std::ofstream>(
-        (label + name + DataLayoutToString(layout)), std::ios_base::app);
+        path, std::ios_base::app);
   }
   size_t getLimit_1() { return limit_1; }
   size_t getLimit_4() { return limit_4; }

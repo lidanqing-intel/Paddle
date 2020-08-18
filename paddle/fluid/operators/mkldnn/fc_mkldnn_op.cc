@@ -542,7 +542,7 @@ class FCMKLDNNOpKernel : public framework::OpKernel<T_in> {
 
     output->set_layout(DataLayout::kMKLDNN);
 
-    output->dump("fc_mkldnn_fwd");
+    output->dump("fc_mkldnn_fwd", ctx.OutputName("Out").c_str());
   }
 };
 }  // namespace operators
