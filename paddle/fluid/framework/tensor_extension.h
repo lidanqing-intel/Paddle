@@ -12,6 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// If the global env op does not exist in the graph,
+// it will throw fc raises an exception std::logic_error,
+// basic_string::_M_construct null not valid
+
+// for fc_mkldnn and relu mkldnn, even the graph has this op, but it does not
+// print out
 #pragma once
 #include <cstdint>
 #include <cstring>
