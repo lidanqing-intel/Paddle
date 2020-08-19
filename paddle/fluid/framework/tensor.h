@@ -212,6 +212,9 @@ class Tensor {
    *          PlaceHolder::ptr_ and where the tensor data really begins.
    */
   size_t offset_;
+  // friend std::unique_ptr<std::ostream> operator<<(
+  //     std::unique_ptr<std::ostream> out,
+  //     const TensorOutStreamer<U, TensorType>& ts);
 };
 
 }  // namespace framework

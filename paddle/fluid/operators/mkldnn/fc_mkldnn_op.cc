@@ -541,6 +541,8 @@ class FCMKLDNNOpKernel : public framework::OpKernel<T_in> {
                          fuse_relu, force_fp32_output);
 
     output->set_layout(DataLayout::kMKLDNN);
+    std::cout << "input is" << (*input) << std::endl;
+    std::cout << "output is" << (*output) << std::endl;
   }
 };
 }  // namespace operators

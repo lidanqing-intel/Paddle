@@ -112,6 +112,7 @@ class LoDTensor : public Tensor {
   const LoD& lod() const { return lod_; }
 
   LoD* mutable_lod() { return &lod_; }
+  friend std::ostream& operator<<(std::ostream& os, const LoDTensor& t);
 
   /*
    * Get the start offset and end offset of an  element from LoD.

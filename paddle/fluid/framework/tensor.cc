@@ -127,5 +127,38 @@ void Tensor::ResetHolderWithType(std::shared_ptr<memory::Allocation> holder,
   type_ = type;
 }
 
+// std::ostream& operator<<(std::ostream& out, const Tensor& ts) {
+//   // out << std::setw(8) << std::setfill(' ')
+//   //      << (TensorDumpConfig<>::NextRecord()) << ") type=["
+//   //      << type_desc<U>::name() << "]  => label=" << ts.label
+//   //      << " name=" << ((ts.name) ? ts.name : "undef") << " crc32=" <<
+//   //      std::hex
+//   //      << ts.checksum() << std::dec << " elem=" << tensor.numel()
+//   //      << " dims=" << dims.size() << "=>";
+
+//   // for (decltype(dims.size()) i = 0; i < dims.size(); ++i) {
+//   //   out << "[" << dims.at(i) << "]";
+//   // }
+
+//   // out << " layout_default=" << DataLayoutToString(tensor.layout())
+//   //      << " layout_desired=" << DataLayoutToString(ts.layout);
+//   // out << std::endl;
+//   // std::size_t br = 0;
+
+//   //   for_each_no_more(ts.begin(), ts.end(),
+//   conf.getLimitViaSize(sizeof(U)),
+//   //                    [&out, &br](U unit) {
+//   //                      if (type_desc<U>::break_line == br++) {
+//   //                        br = 0;
+//   //                        out << std::endl;
+//   //                      }
+//   //                      type_desc<U>::format(out, unit) << std::dec;
+//   //                    });
+//   // }
+
+//   out << std::endl;
+//   return out;
+// }
+
 }  // namespace framework
 }  // namespace paddle
