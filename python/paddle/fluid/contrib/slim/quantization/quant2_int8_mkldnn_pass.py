@@ -93,6 +93,16 @@ class Quant2Int8MkldnnPass(object):
         graph = self._cleanup(graph)
         return graph
 
+    def apply_fp32(self, graph):
+        assert isinstance(graph,
+                          IrGraph), 'graph must be the instance of IrGraph.'
+
+        self._reset_pass_idx_and_group('fp32')
+        graph = self._optimize_fp32_graph(graph)
+        graph = self._final_optimizations(graph)
+        graph = self._cleanup(graph)
+        return graph
+
     def prepare_and_optimize_fp32(self, graph):
         assert isinstance(graph,
                           IrGraph), 'graph must be the instance of IrGraph.'
@@ -366,8 +376,8 @@ class Quant2Int8MkldnnPass(object):
         graph = self._apply_pass(graph, 'fc_fuse_pass',
                                  ['use_gpu', 'use_fc_padding'], [False, False])
         graph = self._apply_pass(graph, 'repeated_fc_relu_fuse_pass')
-        if self._is_fc_quantized(graph):
-            graph = self._apply_pass(graph, 'fc_mkldnn_pass')
+        # if self._is_fc_quantized(graph):
+        graph = self._apply_pass(graph, 'fc_mkldnn_pass')
         graph = self._apply_pass(graph, 'matmul_transpose_reshape_fuse_pass')
         # the following pass should be the last one since it will work on all fused ops.
         graph = self._apply_pass(graph, 'runtime_context_cache_pass')

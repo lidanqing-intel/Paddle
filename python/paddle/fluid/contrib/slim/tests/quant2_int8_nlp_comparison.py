@@ -24,6 +24,7 @@ import paddle.fluid as fluid
 from paddle.fluid.framework import IrGraph
 from paddle.fluid.contrib.slim.quantization import Quant2Int8MkldnnPass
 from paddle.fluid import core
+from paddle.fluid import profiler
 
 logging.basicConfig(format='%(asctime)s-%(levelname)s: %(message)s')
 _logger = logging.getLogger(__name__)
@@ -197,12 +198,14 @@ class QuantInt8NLPComparisonTest(unittest.TestCase):
                 labels = np.array([x[2] for x in data]).astype('int64')
 
                 start = time.time()
+                profiler.start_profiler("All")
                 out = exe.run(inference_program,
                               feed={
                                   feed_target_names[0]: input0,
                                   feed_target_names[1]: input1
                               },
                               fetch_list=fetch_targets)
+                profiler.stop_profiler("total", "/tmp/profile")
                 batch_time = (time.time() - start) * 1000  # in miliseconds
                 batch_times.append(batch_time)
                 batch_correct = self._get_batch_correct(out, labels)

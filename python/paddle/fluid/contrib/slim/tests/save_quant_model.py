@@ -41,6 +41,16 @@ def parse_args():
         default='',
         help='Saved optimized and quantized INT8 model')
     parser.add_argument(
+        '--original_fp32_path',
+        type=str,
+        default='',
+        help='A path to a original fp32 model.')
+    parser.add_argument(
+        '--fused_fp32_path',
+        type=str,
+        default='',
+        help='Saved optimized fused fp32 model')
+    parser.add_argument(
         '--ops_to_quantize',
         type=str,
         default='',
@@ -101,8 +111,49 @@ def transform_and_save_int8_model(original_path, save_path):
             .format(save_path))
 
 
+def transform_fp32_to_fused_fp32_model(original_path, save_path):
+    place = fluid.CPUPlace()
+    exe = fluid.Executor(place)
+    inference_scope = fluid.executor.global_scope()
+    with fluid.scope_guard(inference_scope):
+        if os.path.exists(os.path.join(original_path, '__model__')):
+            [inference_program, feed_target_names,
+             fetch_targets] = fluid.io.load_inference_model(original_path, exe)
+        else:
+            [inference_program, feed_target_names,
+             fetch_targets] = fluid.io.load_inference_model(original_path, exe,
+                                                            'model', 'params')
+
+        ops_to_quantize = set()
+        if len(test_args.ops_to_quantize) > 0:
+            ops_to_quantize = set(test_args.ops_to_quantize.split(','))
+
+        op_ids_to_skip = set([-1])
+        if len(test_args.op_ids_to_skip) > 0:
+            op_ids_to_skip = set(map(int, test_args.op_ids_to_skip.split(',')))
+
+        graph = IrGraph(core.Graph(inference_program.desc), for_test=True)
+        transform_to_mkldnn_int8_pass = Quant2Int8MkldnnPass(
+            ops_to_quantize,
+            _op_ids_to_skip=op_ids_to_skip,
+            _scope=inference_scope,
+            _place=place,
+            _core=core,
+            _debug=test_args.debug)
+        graph = transform_to_mkldnn_int8_pass.apply_fp32(graph)
+        inference_program = graph.to_program()
+        with fluid.scope_guard(inference_scope):
+            fluid.io.save_inference_model(save_path, feed_target_names,
+                                          fetch_targets, exe, inference_program)
+        print(
+            "Success! FP32 model obtained from the Quant model can be found at {}\n"
+            .format(save_path))
+
+
 if __name__ == '__main__':
     global test_args
     test_args, remaining_args = parse_args()
-    transform_and_save_int8_model(test_args.quant_model_path,
-                                  test_args.int8_model_save_path)
+    # transform_and_save_int8_model(test_args.quant_model_path,
+    #                               test_args.int8_model_save_path)
+    transform_fp32_to_fused_fp32_model(test_args.original_fp32_path,
+                                       test_args.fused_fp32_path)
