@@ -1559,7 +1559,7 @@ class AddQuantDequantPass(object):
         "less_than", "mean", "not_equal", "reshape", "reshape2",
         "bilinear_interp", "nearest_interp", "trilinear_interp", "slice",
         "squeeze", "elementwise_sub", "mul", "matmul", "relu", "relu6",
-        "leaky_relu", "tanh", "swish"
+        "leaky_relu", "tanh", "swish", "layer_norm"
     ]
 
     # To be compatible with PaddleSlim, not remove _activation_type for now
@@ -1571,7 +1571,9 @@ class AddQuantDequantPass(object):
                  moving_rate=0.9,
                  quant_bits=8,
                  skip_pattern=["skip_quant"],
-                 quantizable_op_type=["elementwise_add", "pool2d"],
+                 quantizable_op_type=[
+                     "elementwise_add", "pool2d", "layer_norm", "softmax"
+                 ],
                  is_full_quantized=False):
         """
         Constructor.
