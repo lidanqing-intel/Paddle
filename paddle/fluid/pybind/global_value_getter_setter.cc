@@ -33,6 +33,7 @@
 DECLARE_bool(use_mkldnn);
 DECLARE_string(tracer_mkldnn_ops_on);
 DECLARE_string(tracer_mkldnn_ops_off);
+DECLARE_string(var_name_dump_list);
 // debug
 DECLARE_bool(check_nan_inf);
 DECLARE_bool(cpu_deterministic);
@@ -352,7 +353,8 @@ static void RegisterGlobalVarGetterSetter() {
       FLAGS_memory_fraction_of_eager_deletion, FLAGS_use_pinned_memory,
       FLAGS_benchmark, FLAGS_inner_op_parallelism, FLAGS_tracer_profile_fname,
       FLAGS_paddle_num_threads, FLAGS_use_mkldnn, FLAGS_max_inplace_grad_add,
-      FLAGS_tracer_mkldnn_ops_on, FLAGS_tracer_mkldnn_ops_off);
+      FLAGS_tracer_mkldnn_ops_on, FLAGS_tracer_mkldnn_ops_off,
+      FLAGS_var_name_dump_list);
 
 #ifdef PADDLE_WITH_CUDA
   REGISTER_PUBLIC_GLOBAL_VAR(

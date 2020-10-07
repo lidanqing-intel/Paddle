@@ -212,6 +212,7 @@ def __bootstrap__():
         read_env_flags.append('use_mkldnn')
         read_env_flags.append('tracer_mkldnn_ops_on')
         read_env_flags.append('tracer_mkldnn_ops_off')
+        read_env_flags.append('var_name_dump_list')
 
     if core.is_compiled_with_dist():
         #env for rpc

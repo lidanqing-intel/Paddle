@@ -558,3 +558,15 @@ DEFINE_string(tracer_mkldnn_ops_on, "",
  */
 DEFINE_string(tracer_mkldnn_ops_off, "",
               "List of OneDNN operation types to be turned off");
+
+/**
+ * GLOG_v=3 related FLAG
+ * Name: var_name_dump_list
+ * Since Version: 2.0.0
+ * Value Range: string, default=empty
+ * Example:
+ * Note: Holds list of variable names to be printed to the files named by
+ * separated variable names.
+ */
+DEFINE_string(var_name_dump_list, "",
+              "List of variable names that will be printed to files");

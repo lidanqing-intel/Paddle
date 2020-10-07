@@ -35,6 +35,7 @@ limitations under the License. */
 #include "paddle/fluid/framework/var_type.h"
 #include "paddle/fluid/imperative/prepared_operator.h"
 #include "paddle/fluid/platform/profiler.h"
+#include "paddle/fluid/string/string_helper.h"
 #ifdef PADDLE_WITH_XPU
 #include "paddle/fluid/platform/xpu_info.h"
 #endif
@@ -42,7 +43,7 @@ limitations under the License. */
 #ifdef PADDLE_WITH_MKLDNN
 #include "paddle/fluid/platform/mkldnn_helper.h"
 #endif
-
+DECLARE_string(var_name_dump_list);
 DECLARE_bool(benchmark);
 DECLARE_bool(check_nan_inf);
 DECLARE_bool(enable_unused_var_check);
@@ -274,6 +275,18 @@ std::string OperatorBase::DebugStringEx(const Scope* scope) const {
         &(Info().NoNeedBufferVarsInferer()(Inputs(), Outputs(), Attrs()));
     if (no_need_buffer_vars->empty()) no_need_buffer_vars = nullptr;
   }
+  auto var_name_list = FLAGS_var_name_dump_list;
+  std::vector<std::string> var_lists;
+  constexpr const char* GREEN_STR = "\033[1;32m";
+  constexpr const char* RESET_STR = "\033[0m";
+  ss << GREEN_STR << "WARNING! "
+     << "var_name_dump_list: " << FLAGS_var_name_dump_list << RESET_STR
+     << std::endl;
+  if (!var_name_list.empty()) {
+    var_lists = string::split_string<std::string>(var_name_list, ",");
+    ss << GREEN_STR << "var_name_dump_list: " << FLAGS_var_name_dump_list
+       << RESET_STR << std::endl;
+  }
 
   for (auto it = inputs_.begin(); it != inputs_.end();) {
     auto& input = *it;
@@ -301,6 +314,13 @@ std::string OperatorBase::DebugStringEx(const Scope* scope) const {
       }
       if (i != input.second.size() - 1) {
         ss << ", ";
+      }
+      if (std::find(var_lists.begin(), var_lists.end(), var_name) !=
+          var_lists.end()) {
+        std::cout << "WARNING! " << var_name << ": "
+                  << *(paddle::imperative::GetTensorFromVar(
+                         *(scope->FindVar(var_name))))
+                  << std::endl;
       }
     }
     ss << "]";
@@ -330,7 +350,8 @@ std::string OperatorBase::DebugStringEx(const Scope* scope) const {
           ss << "(" << GetLoDDebug(*scope, var_name) << ")";
         }
       }
-      if (var_name == "layer_norm_3.tmp_2") {
+      if (std::find(var_lists.begin(), var_lists.end(), var_name) !=
+          var_lists.end()) {
         std::cout << "WARNING! " << var_name << ": "
                   << *(paddle::imperative::GetTensorFromVar(
                          *(scope->FindVar(var_name))))
