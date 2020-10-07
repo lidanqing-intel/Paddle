@@ -143,6 +143,14 @@ class QuantInt8NLPComparisonTest(unittest.TestCase):
                 correct += 1
         return correct
 
+    def _remove_fetch_op(self, prog):
+        for block in prog.blocks:
+            for op in block.ops:
+                if op.type == "fetch":
+                    print("WARNING! Here we have fetched")
+                    idx = block.ops.index(op)
+                    block._remove_op(idx)
+
     def _predict(self,
                  test_reader=None,
                  model_path=None,
@@ -155,6 +163,7 @@ class QuantInt8NLPComparisonTest(unittest.TestCase):
         exe = fluid.Executor(place)
         inference_scope = fluid.executor.global_scope()
         with fluid.scope_guard(inference_scope):
+
             if os.path.exists(os.path.join(model_path, '__model__')):
                 [inference_program, feed_target_names,
                  fetch_targets] = fluid.io.load_inference_model(model_path, exe)
@@ -198,13 +207,17 @@ class QuantInt8NLPComparisonTest(unittest.TestCase):
                 input1 = np.array([x[1] for x in data]).astype('int64')
                 labels = np.array([x[2] for x in data]).astype('int64')
 
+                self._remove_fetch_op(inference_program)
+                x = fluid.framework._get_var(
+                    'layer_norm_3.tmp_2', program=inference_program)
                 start = time.time()
                 out = exe.run(inference_program,
                               feed={
                                   feed_target_names[0]: input0,
                                   feed_target_names[1]: input1
                               },
-                              fetch_list=fetch_targets)
+                              fetch_list=[x])
+                print("layer_norm_3.tmp_2", out[0])
                 batch_time = (time.time() - start) * 1000  # in miliseconds
                 batch_times.append(batch_time)
                 batch_correct = self._get_batch_correct(out, labels)

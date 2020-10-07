@@ -33,6 +33,7 @@ limitations under the License. */
 #include "paddle/fluid/framework/transfer_scope_cache.h"
 #include "paddle/fluid/framework/unused_var_check.h"
 #include "paddle/fluid/framework/var_type.h"
+#include "paddle/fluid/imperative/prepared_operator.h"
 #include "paddle/fluid/platform/profiler.h"
 #ifdef PADDLE_WITH_XPU
 #include "paddle/fluid/platform/xpu_info.h"
@@ -328,6 +329,12 @@ std::string OperatorBase::DebugStringEx(const Scope* scope) const {
           ss << "[" << GetDimsDebug(*scope, var_name, true) << "]";
           ss << "(" << GetLoDDebug(*scope, var_name) << ")";
         }
+      }
+      if (var_name == "layer_norm_3.tmp_2") {
+        std::cout << "WARNING! " << var_name << ": "
+                  << *(paddle::imperative::GetTensorFromVar(
+                         *(scope->FindVar(var_name))))
+                  << std::endl;
       }
       if (i != output.second.size() - 1) {
         ss << ", ";
