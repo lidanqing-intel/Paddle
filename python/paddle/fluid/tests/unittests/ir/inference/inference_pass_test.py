@@ -20,7 +20,6 @@ import random
 import unittest
 import numpy as np
 
-import paddle
 import paddle.fluid as fluid
 import paddle.fluid.core as core
 from paddle.fluid.core import PaddleTensor
@@ -35,7 +34,6 @@ from paddle.fluid.contrib.slim.quantization import QuantizationFreezePass
 
 class InferencePassTest(unittest.TestCase):
     def __init__(self, methodName='runTest'):
-        paddle.enable_static()
         super(InferencePassTest, self).__init__(methodName)
         self.main_program = fluid.Program()
         self.startup_program = fluid.Program()
@@ -43,6 +41,7 @@ class InferencePassTest(unittest.TestCase):
         self.fetch_list = None
 
         self.enable_mkldnn = False
+        self.enable_mkldnn_bf16 = False
         self.enable_trt = False
         self.trt_parameters = None
         self.enable_lite = False
@@ -103,7 +102,8 @@ class InferencePassTest(unittest.TestCase):
     def _get_analysis_config(self,
                              use_gpu=False,
                              use_trt=False,
-                             use_mkldnn=False):
+                             use_mkldnn=False,
+                             use_mkldnn_bf16=False):
         '''
         Return a new object of AnalysisConfig. 
         '''
@@ -125,6 +125,9 @@ class InferencePassTest(unittest.TestCase):
                     self.trt_parameters.use_calib_mode)
         elif use_mkldnn:
             config.enable_mkldnn()
+            if use_mkldnn_bf16:
+                config.enable_mkldnn_bfloat16()
+                config.set_bfloat16_op({"quantize", "conv2d"})
 
         return config
 
@@ -213,7 +216,6 @@ class InferencePassTest(unittest.TestCase):
             if flatten:
                 out = out.flatten()
                 analysis_output = analysis_output.flatten()
-
             self.assertTrue(
                 np.allclose(
                     out, analysis_output, atol=atol),
@@ -235,7 +237,6 @@ class InferencePassTest(unittest.TestCase):
                 if flatten:
                     out = out.flatten()
                     tensorrt_output = tensorrt_output.flatten()
-
                 self.assertTrue(
                     np.allclose(
                         out, tensorrt_output, atol=atol),
@@ -245,7 +246,9 @@ class InferencePassTest(unittest.TestCase):
         if (not use_gpu) and self.enable_mkldnn:
             mkldnn_outputs = self._get_analysis_outputs(
                 self._get_analysis_config(
-                    use_gpu=use_gpu, use_mkldnn=self.enable_mkldnn))
+                    use_gpu=use_gpu,
+                    use_mkldnn=self.enable_mkldnn,
+                    use_mkldnn_bf16=self.enable_mkldnn_bf16))
 
             self.assertTrue(
                 len(outs) == len(mkldnn_outputs),
