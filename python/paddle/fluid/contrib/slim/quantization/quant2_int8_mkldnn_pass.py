@@ -89,8 +89,8 @@ class Quant2Int8MkldnnPass(object):
         graph = self._compute_weight_scales(graph)
         graph = self._update_relu_output_scales(graph)
         graph = self._propagate_scales(graph)
-        graph = self._quantize_fp32_graph(graph)
-        graph = self._final_optimizations(graph)
+        # graph = self._quantize_fp32_graph(graph)
+        # graph = self._final_optimizations(graph)
         graph = self._cleanup(graph)
         return graph
 
@@ -348,7 +348,7 @@ class Quant2Int8MkldnnPass(object):
         #  graph = self._apply_pass(graph, 'seqpool_concat_fuse_pass')
         graph = self._apply_pass(graph, 'seqpool_cvm_concat_fuse_pass')
         #  graph = self._apply_pass(graph, 'embedding_fc_lstm_fuse_pass')
-        graph = self._apply_pass(graph, 'fc_lstm_fuse_pass')
+        # graph = self._apply_pass(graph, 'fc_lstm_fuse_pass')
         graph = self._apply_pass(graph, 'mul_lstm_fuse_pass')
         graph = self._apply_pass(graph, 'fc_gru_fuse_pass')
         graph = self._apply_pass(graph, 'mul_gru_fuse_pass')
