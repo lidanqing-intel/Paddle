@@ -85,6 +85,9 @@ class TestElementwiseAddOp_xsize_lessthan_ysize_add(TestMKLDNNElementwiseAddOp):
     def test_check_grad_normal(self):
         pass
 
+    def test_check_grad_ingore_y(self):
+        pass
+
     def test_check_grad_ingore_x(self):
         pass
 
