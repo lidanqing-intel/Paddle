@@ -2341,8 +2341,6 @@ PDNode *patterns::DuplicatedInputs::operator()() {
 PDNode *patterns::MKLDNNInPlace::operator()() {
   const std::unordered_set<std::string> &supported_op_types = {
       "abs",
-      "elementwise_mul",
-      "elementwise_add",
       "gelu",
       "leaky_relu",
       "relu",

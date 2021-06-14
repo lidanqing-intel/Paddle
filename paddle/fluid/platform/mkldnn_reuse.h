@@ -644,14 +644,6 @@ class BinaryMKLDNNHandler : public platform::MKLDNNHandlerT<T, dnnl::binary> {
             platform::CreateKey(
                 dev_ctx, framework::vectorize(x->dims()), uniq_name,
                 (algo == dnnl::algorithm::binary_mul ? "M" : ""))) {
-    // bradcasting combined with in-place may require
-    auto rankdiff = x->dims().size() - y->dims().size();
-    if (rankdiff > 0) {
-      auto suffix = std::to_string(rankdiff);
-      this->key_ += suffix;
-      this->key_common_ += suffix;
-    }
-
     if (!this->isCached()) {
       PADDLE_ENFORCE_EQ(
           x->layout(), DataLayout::kMKLDNN,
@@ -674,15 +666,21 @@ class BinaryMKLDNNHandler : public platform::MKLDNNHandlerT<T, dnnl::binary> {
       const auto dst_tz =
           (z == nullptr) ? src_x_tz : framework::vectorize(z->dims());
 
-      const auto src0_md = dnnl::memory::desc(
+      auto src0_md = dnnl::memory::desc(
           src_x_tz, platform::MKLDNNGetDataType<T>(), x->format());
       auto src1_md = dnnl::memory::desc(
           src_y_tz, platform::MKLDNNGetDataType<T>(), y->format());
-      if (rankdiff > 0) {
+      auto rankdiff = x->dims().size() - y->dims().size();
+      if (rankdiff > 0) {  // Second input is lesser than first
         std::vector<int64_t> dims1_ex(rankdiff, 1);
         dims1_ex.insert(next(dims1_ex.begin(), (axis == -1 ? rankdiff : axis)),
                         src_y_tz.begin(), src_y_tz.end());
         src1_md = src1_md.reshape(dims1_ex);
+      } else if (rankdiff < 0) {  // First input is lesser than second
+        std::vector<int64_t> dims0_ex(-rankdiff, 1);
+        dims0_ex.insert(next(dims0_ex.begin(), (axis == -1 ? -rankdiff : axis)),
+                        src_x_tz.begin(), src_x_tz.end());
+        src0_md = src0_md.reshape(dims0_ex);
       }
       const auto dst_md = memory::desc(dst_tz, platform::MKLDNNGetDataType<T>(),
                                        MKLDNNMemoryFormat::any);
