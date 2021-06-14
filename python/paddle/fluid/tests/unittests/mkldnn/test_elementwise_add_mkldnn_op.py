@@ -72,6 +72,14 @@ class TestMKLDNNElementwiseAddOp_broadcast_3(TestMKLDNNElementwiseAddOp):
     def init_axis(self):
         self.axis = 1
 
+class TestElementwiseAddOp_xsize_lessthan_ysize_add(TestMKLDNNElementwiseAddOp):
+    def init_input_output(self):
+        self.x = np.random.rand(10, 12).astype(self.dtype)
+        self.y = np.random.rand(2, 2, 10, 12).astype(self.dtype)
+        self.out = self.x + self.y
+
+    def init_axis(self):
+        self.axis = 2
 
 ''' INT8 Tests '''
 
