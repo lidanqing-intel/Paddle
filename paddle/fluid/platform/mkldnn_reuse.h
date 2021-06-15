@@ -663,14 +663,14 @@ class BinaryMKLDNNHandler : public platform::MKLDNNHandlerT<T, dnnl::binary> {
       const auto src_y_tz = framework::vectorize(y->dims());
       // if output tensor(z) is nullptr then we are computing into oneDNN
       // managed buffer
-      const auto dst_tz =
-          (z == nullptr) ? src_x_tz : framework::vectorize(z->dims());
+      auto rankdiff = x->dims().size() - y->dims().size();
+      const auto dst_tz = (z == nullptr) ? (rankdiff > 0 ? src_x_tz : src_y_tz)
+                                         : framework::vectorize(z->dims());
 
       auto src0_md = dnnl::memory::desc(
           src_x_tz, platform::MKLDNNGetDataType<T>(), x->format());
       auto src1_md = dnnl::memory::desc(
           src_y_tz, platform::MKLDNNGetDataType<T>(), y->format());
-      auto rankdiff = x->dims().size() - y->dims().size();
       if (rankdiff > 0) {  // Second input is lesser than first
         std::vector<int64_t> dims1_ex(rankdiff, 1);
         dims1_ex.insert(next(dims1_ex.begin(), (axis == -1 ? rankdiff : axis)),
