@@ -72,6 +72,7 @@ class TestMKLDNNElementwiseAddOp_broadcast_3(TestMKLDNNElementwiseAddOp):
     def init_axis(self):
         self.axis = 1
 
+
 class TestElementwiseAddOp_xsize_lessthan_ysize_add(TestMKLDNNElementwiseAddOp):
     def init_input_output(self):
         self.x = np.random.rand(10, 12).astype(self.dtype)
@@ -91,7 +92,9 @@ class TestElementwiseAddOp_xsize_lessthan_ysize_add(TestMKLDNNElementwiseAddOp):
     def test_check_grad_ingore_x(self):
         pass
 
+
 ''' INT8 Tests '''
+
 
 @skip_check_grad_ci(
     reason="oneDNN's int8 elementwise_ops don't implemend grad kernel.")
